@@ -6,7 +6,7 @@ This file contains the Verilog functions that are to be used within layers, with
 
 def generate_register_verilog(module_name="myreg", param_name="DataWidth", input_name="data_in", output_name="data_out"):
     register_template = """\
-module {module_name} #(parameter {param_name}=16) (
+module {module_name} #(parameter {param_name}=512) (
     input [{param_name}-1:0] {input_name},
     input wire clk,
     input wire rst,
@@ -99,4 +99,24 @@ def generate_neuron_connection_verilog(input_indices, input_bitwidth):
             connection_string += f"M0[{offset+b}]"
             if not (i == len(input_indices)-1 and b == 0):
                 connection_string += ", "
+    return connection_string
+
+
+def generate_neuron_connection_verilog_conv(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, total_channels, seq_length):
+    connection_string = ""
+    for channel in active_channels:
+        # Calculate the starting bit offset for the current active channel and sequence position
+        start_offset = channel * seq_length * input_bitwidth + seq_position * input_bitwidth
+        for idx in range(kernel_size):
+            # print('idx ',idx)
+            if idx >= len(state_space_indices):  # Stop if kernel_size exceeds state_space_indices length
+                break
+            index = state_space_indices[idx]
+            offset = start_offset + index * input_bitwidth
+            # print('offset', offset)
+            # Collect the bits for this index position
+            for b in reversed(range(input_bitwidth)):
+                connection_string += f"M0[{offset + b}]"
+                if not (channel == active_channels[-1] and idx == kernel_size - 1 and b == 0):
+                    connection_string += ", "
     return connection_string
