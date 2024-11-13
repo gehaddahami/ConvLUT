@@ -22,6 +22,7 @@ from init import random_restrict_fanin
 from utils import fetch_mask_indices, fetch_mask_indices_edited, generate_permutation_matrix
 from verilog import    generate_lut_verilog, \
                         generate_neuron_connection_verilog, \
+                        generate_neuron_connection_verilog_conv, \
                         layer_connection_verilog, \
                         generate_logicnets_verilog, \
                         generate_register_verilog
@@ -443,63 +444,55 @@ class SparseConv1dNeq(nn.Module):
     
 
     def gen_layer_verilog(self, module_prefix, directory, generate_bench: bool = True): 
-
         _, input_bitwidth = self.input_quant.get_scale_factor_bits()
         _, output_bitwidth = self.output_quant.get_scale_factor_bits()
         input_bitwidth, output_bitwidth = int(input_bitwidth), int(output_bitwidth)
-        total_input_bits = self.in_channels * input_bitwidth * self.kernel_size
-        total_output_bits = self.out_channels * output_bitwidth
+        total_input_bits = self.in_channels * input_bitwidth * self.seq_length
+        total_output_bits = self.out_channels * output_bitwidth * self.seq_length
 
-        # The line below taked the module_prefix which is a (layer number or name) and print the input and output bitwidth
+        # Start the Verilog module
         layer_contents = f"module {module_prefix} (input [{total_input_bits-1}:0] M0, output[{total_output_bits-1}:0] M1); \n\n"
         output_offset = 0 
 
-        for index in range(self.out_channels): 
-            module_name = f"{module_prefix}_N{index}" 
-            indices, state_space_indices, _, _, _ = self.out_channel_truth_table[index]
+        # Iterate over each output channel (neuron equivalent in CNN context)
+        for out_index in range(self.out_channels): 
+            module_name = f"{module_prefix}_CH{out_index}"
+            channel_indices, state_space_indices, _, _, _ = self.out_channel_truth_table[out_index]
             
-            neuron_verilog = self.gen_neuron_verilog(index, module_name) 
+            neuron_verilog = self.gen_neuron_verilog(out_index, module_name) 
 
             with open(f"{directory}/{module_name}.v", "w") as f: 
                 f.write(neuron_verilog)
             
             if generate_bench: 
                 # Generate the contents of the neuron verilog
-                neuron_bench = self.gen_neuron_bench(index, module_name)
+                neuron_bench = self.gen_neuron_bench(out_index, module_name)
                 with open(f"{directory}/{module_name}.bench", "w") as f: 
                     f.write(neuron_bench) 
 
-            # Generate the string which connects the synapses to this neuron
-            for pos in range(self.seq_length):  # loop over sequence positions
-            # Adjust the input connections to reflect the sliding window
-                connection_string = generate_sliding_window_connection_verilog(state_space_indices, pos, input_bitwidth, self.kernel_size)
-                wire_name = f"{module_name}_pos{pos}_wire" 
-                connection_line = f"wire [{len(indices) * self.kernel_size * input_bitwidth - 1}:0] {wire_name} = {{{connection_string}}}; \n" 
-                inst_line = f"{module_name} {module_name}_inst_pos{pos} (.M0({wire_name}), .M1(M1[{output_offset + output_bitwidth - 1}:{output_offset}])); \n\n"
+            # Generate Verilog code for each kernel position across channels
+            for seq_position in range(self.seq_length):
+
+                # Use both channel_indices and state_space_indices to generate connections
+                connection_string = generate_neuron_connection_verilog_conv(channel_indices, state_space_indices, input_bitwidth, seq_position, self.kernel_size, self.in_channels, self.seq_length)
+                wire_name = f"{module_name}_seq_{seq_position}_wire" 
+                # wire_name = f"{module_name}_seq_{seq_position}_wire" 
+                connection_line = f"wire [{len(state_space_indices)* input_bitwidth-1}:0] {wire_name} = {{{connection_string}}}; \n" 
+                inst_line = f"{module_name} {module_name}_seq_{seq_position}_inst (.M0({wire_name}), .M1(M1[{output_offset+output_bitwidth-1}:{output_offset}])); \n\n"
+                # inst_line = f"{module_name}_seq_{seq_position} {module_name}_seq_{seq_position}_inst (.M0({wire_name}), .M1(M1[{output_offset+output_bitwidth-1}:{output_offset}])); \n\n"
+
                 layer_contents += connection_line + inst_line
-        
-            output_offset += output_bitwidth
+                output_offset += output_bitwidth
 
         layer_contents += 'endmodule'
 
+        # Write the final Verilog layer module to a file
         with open(f'{directory}/{module_prefix}.v', 'w') as f: 
             f.write(layer_contents)
         
         return total_input_bits, total_output_bits
     
-    def generate_sliding_window_connection_verilog(indices, position, input_bitwidth, kernel_size):
-        """
-        This function generates the Verilog wiring for a sliding window of inputs for convolution.
-        Each window has `kernel_size` inputs and reuses the same filter weights.
-        """
-        connection_string = ''
-        for i in range(len(indices)):
-            for k in range(kernel_size):
-                start_bit = (position + k) * input_bitwidth
-                end_bit = start_bit + input_bitwidth - 1
-                connection_string += f"M0[{end_bit}:{start_bit}], "
 
-        return connection_string.rstrip(", ")  # Remove the last comma
 
     def gen_neuron_verilog(self, index, module_name): 
         indices, state_space_indices, input_perm_matrix, float_output_states, bin_output_states = self.out_channel_truth_table[index] 
