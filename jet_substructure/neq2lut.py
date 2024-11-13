@@ -30,6 +30,7 @@ from nn_layers import    generate_truth_tables, \
 
 from train import configs, model_config, dataset_config, test
 from dataset import JetSubstructureDataset
+from dataset_dump import dump_io
 from models import JetSubstructureNeqModel, JetSubstructureLutModel
 from synthesis import synthesize_and_get_resource_counts 
 from utils import proc_postsynth_file
@@ -160,10 +161,17 @@ if __name__ == "__main__":
     print("Top level entity stored at: %s/logicnet.v ..." % (options_cfg["log_dir"]))
 
     if args.dump_io:
-        io_filename = options_cfg["log_dir"] + f"io_{args.dataset_split}.txt"
+        io_filename = options_cfg["log_dir"] + f"io_{args.dataset_split}.txt" # this io_file is needed for the verilog inference simulation
         with open(io_filename, 'w') as f:
             pass # Create an empty file.
         print(f"Dumping verilog I/O to {io_filename}...")
+
+        test_input_file = config['log_dir'] + "/test_input.txt"
+        test_output_file = config['log_dir'] + "/test_output.txt"
+        #print(f"Dumping train I/O to {train_input_file} and {train_output_file}")
+        #dump_io(model, train_loader, train_input_file, train_output_file)
+        print(f"Dumping test I/O to {test_input_file} and {test_output_file}")
+        dump_io(model, test_loader, test_input_file, test_output_file)
     else:
         io_filename = None
 
