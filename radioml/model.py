@@ -2,7 +2,7 @@
 This is the model architecture for RadioML. 
 The first linear layer still need to be modified by deceiding the number of the input featrues dynamically without the need 
 to manually reconfigure it everytime based on the sequence length and the number of channels of the used dataset
-'''
+''' 
 
 
 # Imports
@@ -87,8 +87,15 @@ class QuantizedRadiomlNEQ(nn.Module):
                 layer = SparseLinearNeq(in_features=model_config['1st_layer_in_f'], out_features=out_features, input_quant=layer_list[-1].output_quant, output_quant=output_quantized, mask=mask, reshaped_in_features = model_config['1st_layer_in_f'], apply_input_quant=False, first_linear=True, bias=True)
                 layer_list.append(layer)
 
+            elif i == len(self.num_neurons)-4:   # hidden conv layers architecture 
+                # seq_length = (seq_length + (2 * model_config['padding'])- 3) // 2 
+                output_quantized = QuantBrevitasActivation(QuantReLU(bit_width=model_config['hidden_bitwidth'], max_val=2.0, min_val=-2.0, quant_type=QuantType.INT, scaling_imp_type=ScalingImplType.PARAMETER), pre_transforms=[bn], post_transforms=None)
+                mask = RandomFixedSparsityConv1DMask(out_channels=out_features, in_channels=in_features, kernel_size=3, fan_in=model_config['conv_fanin'] )
+                layer = SparseConv1dNeq(in_channels=in_features, out_channels=out_features, kernel_size=3, seq_length=seq_length, input_quant=layer_list[-1].output_quant, output_quant=output_quantized, mask=mask, padding=model_config['padding'], apply_input_quant=False, cnn_output=False)
+                layer_list.append(layer)
+
             else:   # hidden conv layers architecture 
-                seq_length = (seq_length + (2 * model_config['padding'])- 3) // 2 
+                # seq_length = (seq_length + (2 * model_config['padding'])- 3) // 2 
                 output_quantized = QuantBrevitasActivation(QuantReLU(bit_width=model_config['hidden_bitwidth'], max_val=2.0, min_val=-2.0, quant_type=QuantType.INT, scaling_imp_type=ScalingImplType.PARAMETER), pre_transforms=[bn], post_transforms=None)
                 mask = RandomFixedSparsityConv1DMask(out_channels=out_features, in_channels=in_features, kernel_size=3, fan_in=model_config['conv_fanin'] )
                 layer = SparseConv1dNeq(in_channels=in_features, out_channels=out_features, kernel_size=3, seq_length=seq_length, input_quant=layer_list[-1].output_quant, output_quant=output_quantized, mask=mask, padding=model_config['padding'], apply_input_quant=False)
@@ -171,9 +178,9 @@ class QuantizedRadiomlNEQ(nn.Module):
         for i, layer in enumerate(self.module_list): 
             x = layer(x)
             
-            if i < 4:
-                # print('x shape before the maxpool is: ', x.shape)
-                x = self.maxpool(x)
+            # if i < 4:
+            #     # print('x shape before the maxpool is: ', x.shape)
+            #     x = self.maxpool(x)
                 # print('x shape after the maxpool is: ', x.shape)
     
         return x 

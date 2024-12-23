@@ -102,17 +102,19 @@ def generate_neuron_connection_verilog(input_indices, input_bitwidth):
     return connection_string
 
 
-def generate_neuron_connection_verilog_conv(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, total_channels, seq_length):
+def generate_neuron_connection_verilog_conv(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, total_channels, seq_length, padding):
+    # in this function if the padded sequence was used instead of the original sequence length the function will not generate the correct starting offset. becuse the padding is perfromed later
+    # hence, if the user wants to use the padded sequence, the the (seq_length+2*padding) in the start offest should be changed to have the seq_length argument alone.
     connection_string = ""
     for channel in active_channels:
         # Calculate the starting bit offset for the current active channel and sequence position
-        start_offset = channel * seq_length * input_bitwidth + seq_position * input_bitwidth
+        start_offset = channel * (seq_length + 2*padding) * input_bitwidth + seq_position * input_bitwidth
         for idx in range(kernel_size):
             # print('idx ',idx)
             if idx >= len(state_space_indices):  # Stop if kernel_size exceeds state_space_indices length
                 break
             index = state_space_indices[idx]
-            offset = start_offset + index * input_bitwidth
+            offset = start_offset + idx * input_bitwidth
             # print('offset', offset)
             # Collect the bits for this index position
             for b in reversed(range(input_bitwidth)):

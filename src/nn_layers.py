@@ -97,7 +97,7 @@ def module_list_to_verilog_module(module_list: nn.ModuleList, module_name: str, 
                                                         output_wire = i !=len(module_list)-1, 
                                                         register = add_registers) 
         
-        if isinstance(m, SparseConv1dNeq): #type(m) == SparseConv1dNeq
+        elif isinstance(m, SparseConv1dNeq): #type(m) == SparseConv1dNeq
             module_prefix = f"layer{i}"
             module_input_bits, module_output_bits = m.gen_layer_verilog(module_prefix, output_directory, generate_bench=generate_bench)
             if i == 0:
@@ -113,8 +113,8 @@ def module_list_to_verilog_module(module_list: nn.ModuleList, module_name: str, 
                                                         output_wire = i !=len(module_list)-1, 
                                                         register = add_registers)
         
-        # else:  
-        #     raise Exception(f'Expect type(module) == SparseLinearNeq or SparseConv1dNeq, {type(m)} found') 
+        else:  
+            raise Exception(f'Expect type(module) == SparseLinearNeq or SparseConv1dNeq, {type(m)} found') 
         
     module_list_verilog = generate_logicnets_verilog( module_name = module_name, 
                                                      input_name = 'M0', 
@@ -156,6 +156,10 @@ class SparseLinearNeq(nn.Module):
         self.apply_output_quant = apply_output_quant
         self.first_linear = first_linear
         self.reshaped_in_features = reshaped_in_features
+        if first_linear: 
+            self.input_features = self.reshaped_in_features 
+        else: 
+            self.input_features = self.in_features
 
 
     def lut_cost(self):
@@ -300,11 +304,11 @@ class SparseLinearNeq(nn.Module):
         if self.first_linear: 
             x = x.view(x.size(0), -1)
         for i in range(self.out_features):       
-            print(f'pefrorming lut_forward for out_feature {i}')          
+            # print(f'pefrorming lut_forward for out_feature {i}')          
             indices, input_perm_matrix, float_output_states, bin_output_states = self.neuron_truth_tables[i]
             connected_input = x[:,indices]
             y[:,i] = self.table_lookup(connected_input, input_perm_matrix, bin_output_states)
-        
+            
         return y
     
 
@@ -340,11 +344,11 @@ class SparseLinearNeq(nn.Module):
                 
                 input_state_space.append(neuron_state_space)
                 bin_state_space.append(bin_space)
-            print(f'The state space has been generated for {len(input_state_space)} neurons') 
+            # print(f'The state space has been generated for {len(input_state_space)} neurons') 
 
             neuron_truth_tables = list() 
             for n in range(self.out_features): 
-                print('processing out feature no. :', n)
+                # print('processing out feature no. :', n)
                 input_mask = mask[n,:]
                 fan_in = torch.sum(input_mask) 
                 indices = fetch_mask_indices(input_mask)
@@ -401,7 +405,7 @@ class SparseConv1d(qnn.QuantConv1d):
 # Applying the customized convolutional forward function defined above along with the input and/or output quantization function from the brevitas module 
 # TODO: this class is to be further customized to allow for more functionality when the hardware is intoduced 
 class SparseConv1dNeq(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, seq_length, input_quant, output_quant, mask, apply_input_quant=True, apply_output_quant=True, padding=1) -> None:
+    def __init__(self, in_channels, out_channels, kernel_size, seq_length, input_quant, output_quant, mask, apply_input_quant=True, apply_output_quant=True, cnn_output= True, padding=1) -> None:
         super(SparseConv1dNeq, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -415,6 +419,7 @@ class SparseConv1dNeq(nn.Module):
         self.is_lut_inference = False
         self.apply_input_quant = apply_input_quant
         self.apply_output_quant = apply_output_quant 
+        self.cnn_output = cnn_output
     
 
     def lut_cost(self):  # Is this valid for 1D-CNN? 
@@ -442,13 +447,14 @@ class SparseConv1dNeq(nn.Module):
         # Compute total LUTCost
         return self.out_channels * neuron_lut_cost
     
-
     def gen_layer_verilog(self, module_prefix, directory, generate_bench: bool = True): 
         _, input_bitwidth = self.input_quant.get_scale_factor_bits()
         _, output_bitwidth = self.output_quant.get_scale_factor_bits()
         input_bitwidth, output_bitwidth = int(input_bitwidth), int(output_bitwidth)
-        total_input_bits = self.in_channels * input_bitwidth * self.seq_length
-        total_output_bits = self.out_channels * output_bitwidth * self.seq_length
+        total_input_bits = self.in_channels * input_bitwidth * (self.seq_length + 2*self.padding)
+        total_output_bits = self.out_channels * output_bitwidth * (self.seq_length + 2*self.padding)
+        if not self.cnn_output: 
+            total_output_bits = self.out_channels * output_bitwidth * (self.seq_length)
 
         # Start the Verilog module
         layer_contents = f"module {module_prefix} (input [{total_input_bits-1}:0] M0, output[{total_output_bits-1}:0] M1); \n\n"
@@ -470,19 +476,32 @@ class SparseConv1dNeq(nn.Module):
                 with open(f"{directory}/{module_name}.bench", "w") as f: 
                     f.write(neuron_bench) 
 
+            #this will hardcode the padding into the layer
+            if self.cnn_output:
+                layer_contents += f"// Padding at the start of output channel {out_index}\n"
+                for b in range(self.padding * output_bitwidth):
+                    layer_contents += f"assign M1[{output_offset + b}] = 0;\n"
+                output_offset +=  output_bitwidth * self.padding
+
+
             # Generate Verilog code for each kernel position across channels
             for seq_position in range(self.seq_length):
 
                 # Use both channel_indices and state_space_indices to generate connections
-                connection_string = generate_neuron_connection_verilog_conv(channel_indices, state_space_indices, input_bitwidth, seq_position, self.kernel_size, self.in_channels, self.seq_length)
+                connection_string = generate_neuron_connection_verilog_conv(channel_indices, state_space_indices, input_bitwidth, seq_position, self.kernel_size, self.in_channels, self.seq_length, self.padding)
                 wire_name = f"{module_name}_seq_{seq_position}_wire" 
-                # wire_name = f"{module_name}_seq_{seq_position}_wire" 
                 connection_line = f"wire [{len(state_space_indices)* input_bitwidth-1}:0] {wire_name} = {{{connection_string}}}; \n" 
                 inst_line = f"{module_name} {module_name}_seq_{seq_position}_inst (.M0({wire_name}), .M1(M1[{output_offset+output_bitwidth-1}:{output_offset}])); \n\n"
-                # inst_line = f"{module_name}_seq_{seq_position} {module_name}_seq_{seq_position}_inst (.M0({wire_name}), .M1(M1[{output_offset+output_bitwidth-1}:{output_offset}])); \n\n"
 
                 layer_contents += connection_line + inst_line
                 output_offset += output_bitwidth
+            
+            if self.cnn_output:
+                # Add padding for the end of each channel
+                layer_contents += f"// Padding at the end of output channel {out_index}\n"
+                for b in range(self.padding * output_bitwidth):
+                    layer_contents += f"assign M1[{output_offset + b}] = 0;\n"
+                output_offset += self.padding * output_bitwidth
 
         layer_contents += 'endmodule'
 
@@ -491,9 +510,9 @@ class SparseConv1dNeq(nn.Module):
             f.write(layer_contents)
         
         return total_input_bits, total_output_bits
+
     
-
-
+   
     def gen_neuron_verilog(self, index, module_name): 
         indices, state_space_indices, input_perm_matrix, float_output_states, bin_output_states = self.out_channel_truth_table[index] 
         _, input_bitwidth = self.input_quant.get_scale_factor_bits()
@@ -594,7 +613,7 @@ class SparseConv1dNeq(nn.Module):
 
         # Performing table_lookup for each neuron output
         for i in range (self.out_channels): 
-            print(f'processing out channel {i} for lut forward') 
+            # print(f'processing out channel {i} for lut forward') 
             indices, state_space_indices, input_perm_matrix, float_output_states, bin_output_states = self.out_channel_truth_table[i]
             connected_input = x[:, indices, :]
             y[:, i, :] = self.table_lookup(connected_input, input_perm_matrix, bin_output_states)
@@ -634,7 +653,6 @@ class SparseConv1dNeq(nn.Module):
                 for k in range(self.kernel_size):
                     sample_state_space = self.input_quant.get_state_space()
                     bin_sample_state_space = self.input_quant.get_bin_state_space()
-
                     channel_state_space.append(sample_state_space)
                     bin_channel_state_space.append(bin_sample_state_space) 
 
@@ -644,7 +662,6 @@ class SparseConv1dNeq(nn.Module):
             for out_c in range(self.out_channels): 
                 input_mask = mask[out_c, :, :] 
                 flattened_input = input_mask.flatten() 
-                fan_in = torch.sum(flattened_input) # resembling the number of total elements fed into the outchannel
                 state_space_indices = fetch_mask_indices(flattened_input)
                 indices = fetch_mask_indices_edited(input_mask)
 
@@ -659,6 +676,7 @@ class SparseConv1dNeq(nn.Module):
                 padded_permutation_matrix = torch.zeros((self.in_channels, self.kernel_size, num_permutations))
                 reshaped_padded = padded_permutation_matrix.view(padded_permutation_matrix.size(0) * padded_permutation_matrix.size(1), -1) # reshaped to broadcast 
                 reshaped_padded[state_space_indices, :] = permutation_matrix.t() 
+                # print('the reshaped padded matrix shape is: ', reshaped_padded.shape)
                 
                 apply_input_quant, apply_output_quant = self.apply_input_quant, self.apply_output_quant
                 self.apply_input_quant, self.apply_output_quant = False, False
