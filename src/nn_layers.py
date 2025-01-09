@@ -23,6 +23,7 @@ from utils import fetch_mask_indices, fetch_mask_indices_edited, generate_permut
 from verilog import    generate_lut_verilog, \
                         generate_neuron_connection_verilog, \
                         generate_neuron_connection_verilog_conv, \
+                        generate_pooling_connection_verilog, \
                         layer_connection_verilog, \
                         generate_logicnets_verilog, \
                         generate_register_verilog
@@ -48,10 +49,16 @@ def generate_truth_tables(model: nn.Module, verbose: bool = False):
         if type(module) == SparseConv1dNeq: # Generating truth tables for convolutional layers
             if verbose:
                 print(f"Generating truth table for layer {name}")
-            module.calculate_truth_tables_conv2()
+            module.calculate_conv_truth_tables()
             if verbose:
                 print(f"Truth tables generated for {len(module.out_channel_truth_table)} channels") 
-
+        
+        if type(module) == pooling_layer:# Generating truth tables for pooling layers
+            if verbose:
+                print(f"Generating truth table for layer {name}")
+            module.calculate_pooling_truth_tables()
+            if verbose:
+                print(f"Truth tables generated for {len(module.out_channel_pooling_truth_table)} channels")
     model.training = training
 
 
@@ -62,14 +69,21 @@ def lut_inference(model: nn.Module) -> None:
 
         if  type(module) == SparseConv1dNeq:
             module.lut_inference()
+        
+        if  type(module) == pooling_layer:
+            module.lut_inference()
 
+# function 2 
 def neq_inference(model: nn.Module) -> None: 
     for name, module in model.named_modules():
         if type(module) == SparseLinearNeq: 
-            module.neq_inference()
+            module.lut_inference()
 
         if  type(module) == SparseConv1dNeq:
-            module.neq_inference()
+            module.lut_inference()
+            
+        if  type(module) == pooling_layer:
+            module.lut_inference()
 
 
 # the function belos is to transform the model into verilog module. (conv layers are to be added into the function) 
@@ -112,7 +126,22 @@ def module_list_to_verilog_module(module_list: nn.ModuleList, module_name: str, 
                                                         output_bits = module_output_bits,
                                                         output_wire = i !=len(module_list)-1, 
                                                         register = add_registers)
-        
+            
+        elif isinstance(m, pooling_layer): 
+            module_prefix = f"layer_pooling{i}"
+            module_input_bits, module_output_bits = m.gen_layer_verilog(module_prefix, output_directory, generate_bench=generate_bench) 
+            if i == 0:
+                input_bitwidth = module_input_bits
+            if i == len(module_list)-1:
+                output_bitwidth = module_output_bits
+            module_contents += layer_connection_verilog( module_prefix, 
+                                                        input_string = f'M{i}',
+                                                        input_bits = module_input_bits,
+                                                        output_string = f'M{i+1}',
+                                                        output_bits = module_output_bits,
+                                                        output_wire = i != len(module_list)-1,
+                                                        register = add_registers) 
+            
         else:  
             raise Exception(f'Expect type(module) == SparseLinearNeq or SparseConv1dNeq, {type(m)} found') 
         
@@ -309,6 +338,7 @@ class SparseLinearNeq(nn.Module):
             connected_input = x[:,indices]
             y[:,i] = self.table_lookup(connected_input, input_perm_matrix, bin_output_states)
             
+        
         return y
     
 
@@ -447,7 +477,9 @@ class SparseConv1dNeq(nn.Module):
         # Compute total LUTCost
         return self.out_channels * neuron_lut_cost
     
+    
     def gen_layer_verilog(self, module_prefix, directory, generate_bench: bool = True): 
+        
         _, input_bitwidth = self.input_quant.get_scale_factor_bits()
         _, output_bitwidth = self.output_quant.get_scale_factor_bits()
         input_bitwidth, output_bitwidth = int(input_bitwidth), int(output_bitwidth)
@@ -617,7 +649,7 @@ class SparseConv1dNeq(nn.Module):
             indices, state_space_indices, input_perm_matrix, float_output_states, bin_output_states = self.out_channel_truth_table[i]
             connected_input = x[:, indices, :]
             y[:, i, :] = self.table_lookup(connected_input, input_perm_matrix, bin_output_states)
-
+        print(f'shape of y after the layer is {y.shape}')
         return y
 
 
@@ -644,7 +676,7 @@ class SparseConv1dNeq(nn.Module):
         return x
     
     
-    def calculate_truth_tables_conv2(self): 
+    def calculate_conv_truth_tables(self): 
         with torch.no_grad(): 
             mask = self.conv.mask() 
             channel_state_space = []   
@@ -663,6 +695,7 @@ class SparseConv1dNeq(nn.Module):
                 input_mask = mask[out_c, :, :] 
                 flattened_input = input_mask.flatten() 
                 state_space_indices = fetch_mask_indices(flattened_input)
+
                 indices = fetch_mask_indices_edited(input_mask)
 
                 # Get the channel state space for the specific channel index
@@ -676,7 +709,7 @@ class SparseConv1dNeq(nn.Module):
                 padded_permutation_matrix = torch.zeros((self.in_channels, self.kernel_size, num_permutations))
                 reshaped_padded = padded_permutation_matrix.view(padded_permutation_matrix.size(0) * padded_permutation_matrix.size(1), -1) # reshaped to broadcast 
                 reshaped_padded[state_space_indices, :] = permutation_matrix.t() 
-                # print('the reshaped padded matrix shape is: ', reshaped_padded.shape)
+                print('the reshaped padded matrix shape is: ', reshaped_padded.shape)
                 
                 apply_input_quant, apply_output_quant = self.apply_input_quant, self.apply_output_quant
                 self.apply_input_quant, self.apply_output_quant = False, False
@@ -693,6 +726,249 @@ class SparseConv1dNeq(nn.Module):
                 
         self.out_channel_truth_table = out_channel_truth_table
 
+
+
+class pooling_layer(nn.Module):
+    def __init__(self, in_channels, out_channels, seq_length, input_quant, output_quant, mask, cnn_output=True, padding=1, pooling_kernel_size=2, apply_input_quant=True, apply_output_quant=True) -> None:
+        super(pooling_layer, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.seq_length = seq_length
+        self.input_quant = input_quant
+        self.padding = padding
+        self.output_quant = output_quant
+        self.is_lut_inference = False
+        self.cnn_output = cnn_output
+        self.pooling_kernel_size = pooling_kernel_size
+        self.pool = nn.MaxPool1d(pooling_kernel_size)
+        self.apply_input_quant = apply_input_quant
+        self.apply_output_quant = apply_output_quant
+
+            
+    def gen_layer_verilog(self, module_prefix, directory, generate_bench: bool = True): 
+        
+        _, input_bitwidth = self.input_quant.get_scale_factor_bits()
+        _, output_bitwidth = self.output_quant.get_scale_factor_bits()
+        input_bitwidth, output_bitwidth = int(input_bitwidth), int(output_bitwidth)
+        total_input_bits = self.in_channels * input_bitwidth * self.seq_length
+        total_output_bits = self.out_channels * output_bitwidth * self.seq_length
+
+
+        # Start the Verilog module
+        layer_contents = f"module {module_prefix} (input [{total_input_bits-1}:0] M0, output[{total_output_bits-1}:0] M1); \n\n"
+        output_offset = 0 
+
+        # Iterate over each output channel (neuron equivalent in CNN context)
+        for out_index in range(self.out_channels): 
+            module_name = f"{module_prefix}_CH{out_index}"
+            out_ch_idx, _, _, _ = self.out_channel_pooling_truth_table[out_index]
+            if out_index != out_ch_idx:
+                raise ValueError(f"Output channel index {out_index} does not match the expected index {out_ch_idx}")
+            
+            neuron_verilog = self.gen_neuron_verilog(out_index, module_name) 
+
+            with open(f"{directory}/{module_name}.v", "w") as f: 
+                f.write(neuron_verilog)
+            
+            if generate_bench: 
+                # Generate the contents of the neuron verilog
+                neuron_bench = self.gen_neuron_bench(out_index, module_name)
+                with open(f"{directory}/{module_name}.bench", "w") as f: 
+                    f.write(neuron_bench) 
+
+            # Generate Verilog code for each kernel position across channels
+            for seq_position in range(self.seq_length):
+
+                # Use both channel_indices and state_space_indices to generate connections
+                connection_string = generate_pooling_connection_verilog(out_index, self.pooling_kernel_size, input_bitwidth, self.seq_length, seq_position)
+                wire_name = f"{module_name}_seq_{seq_position}_wire" 
+                connection_line = f"wire [{(self.pooling_kernel_size-1) * input_bitwidth - 1}:0] {wire_name} = {{{connection_string}}};\n" 
+                inst_line = f"{module_name} {module_name}_seq_{seq_position}_inst (.M0({wire_name}), .M1(M1[{output_offset+output_bitwidth-1}:{output_offset}])); \n\n"
+
+                layer_contents += connection_line + inst_line
+                output_offset += output_bitwidth
+
+            layer_contents += f"// End of channel {out_index}\n\n"
+
+        layer_contents += 'endmodule'
+
+        # Write the final Verilog layer module to a file
+        with open(f'{directory}/{module_prefix}.v', 'w') as f: 
+            f.write(layer_contents)
+        
+        return total_input_bits, total_output_bits
+
+    
+    def gen_neuron_verilog(self, index, module_name): 
+        out_ch_idx ,input_perm_matrix, float_output_states, bin_output_states = self.out_channel_pooling_truth_table[index] 
+        _, input_bitwidth = self.input_quant.get_scale_factor_bits()
+        _, output_bitwidth = self.output_quant.get_scale_factor_bits()
+        cat_input_bitwidth = len(self.pooling_kernel_size) * input_bitwidth
+        lut_string = '' 
+        num_entries = input_perm_matrix.shape[0] 
+        
+        for i in range(num_entries): 
+            entry_string = '' 
+            for idx in range(len(self.pooling_kernel_size)): 
+                val = input_perm_matrix[i, idx]
+                entry_string += self.input_quant.get_bin_str(val) 
+            
+            res_str = self.output_quant.get_bin_str(bin_output_states[i])
+            lut_string += f"\t\t\t{int(cat_input_bitwidth)}'b{entry_string}:M1r = {int(output_bitwidth)}'b{res_str};\n"
+
+        return generate_lut_verilog(module_name, int(cat_input_bitwidth), int(output_bitwidth), lut_string)
+
+    def lut_inference(self): 
+        self.is_lut_inference = True
+        self.input_quant.bin_output()
+        self.output_quant.bin_output()
+
+
+    def neq_inference(self): 
+        self.is_lut_inference = False
+        self.input_quant.float_output()
+        self.output_quant.float_output()
+    
+    def table_lookup(self, connected_input: Tensor, input_perm_matrix: Tensor, bin_output_states: Tensor) -> Tensor:
+            batch_size, sequence_length = connected_input.shape
+            print('shape of the connected input is', connected_input.shape)
+            kernel_size = self.pooling_kernel_size
+            bin_output_states = bin_output_states 
+            
+            # Initialize the output tensor
+            acc_outputs = torch.zeros(batch_size, sequence_length // 2)
+
+            for i in range(0, sequence_length, kernel_size):  # Step by kernel_size
+                # Extract the current window for all channels
+                window = connected_input[:, i:i + kernel_size]  # Shape: [batch_size, input_channels, kernel_size]
+
+                # Broadcast the input and perm matrix
+                ci_bcast = window.unsqueeze(2) # (Batch, Flattened input, 1)
+                print('the shape of the ci_bcast slice is: ', ci_bcast.shape)
+
+                pm_bcast = input_perm_matrix.t().unsqueeze(0)  # (1, Permutations, Flattened input)
+
+                # Perform element-wise comparison and match
+                eq = (ci_bcast == pm_bcast).sum(dim=1) == kernel_size  # Shape: [batch_size, permutations]
+                matches = eq.sum(dim=1)  # Shape: [batch_size]
+                if not (matches == torch.ones_like(matches, dtype=matches.dtype)).all():
+                    raise Exception(f"One or more vectors in the input are not in the possible input state space")
+
+                # Find the indices of the matching input states
+                indices = torch.argmax(eq.type(torch.int64), dim=1)  # Shape: [batch_size]
+                output_states = bin_output_states[indices]  # Shape: [batch_size]
+
+                # Assign the output to the corresponding position in acc_outputs
+                acc_outputs[: ,  i // kernel_size] = output_states
+                print('shape of the function output is: ', acc_outputs.shape)
+
+            return acc_outputs
+
+
+    def lut_forward(self, x: torch.Tensor) -> torch.Tensor: 
+        if self.apply_input_quant:
+                x = self.input_quant(x)
+
+        batch_size, _, sequence_length = x.shape
+        y = torch.zeros(batch_size, self.out_channels, sequence_length//2)  
+
+        # Performing table_lookup for each neuron output
+        for i in range (self.out_channels): 
+            # print(f'processing out channel {i} for lut forward') 
+            out_ch_idx, input_perm_matrix, float_output_states, bin_output_states = self.out_channel_pooling_truth_table[i]
+            connected_input = x[:, i, :]
+            y[:, i, :] = self.table_lookup(connected_input, input_perm_matrix, bin_output_states)
+        print(f'shape of y after the layer is {y.shape}')
+        return y
+    
+
+    # def forward_tt(self, tensor):
+    #     # Check the shape of the input tensor
+    #     size_1, size_2 = tensor.shape
+
+    #     # Ensure the second dimension is at least 2
+    #     if size_2 < 2:
+    #         raise ValueError("Input tensor must have at least size 2 along the second dimension.")
+
+    #     # Initialize an empty list to store results
+    #     results = []
+
+    #     # Iterate over the tensor, taking 2-by-2 slices
+    #     for i in range(0, size_2, 2):
+    #         # Handle the case where the last slice has less than 2 elements
+    #         if i + 1 < size_2:
+    #             slice_ = tensor[:, i:i + 2]  # Take a 2-element slice
+                
+    #             max_values = slice_.max(dim=1).values  # Compute the maximum along the second dimension
+    #             results.append(max_values)
+    #         else:
+    #             # If there's only one element left, append it as-is
+    #             results.append(tensor[:, i])
+
+    #     # Concatenate results along the second dimension
+    #     result_tensor = torch.stack(results, dim=1)
+
+    #     return result_tensor
+    
+    def forward(self, x: Tensor) -> Tensor:
+        if self.is_lut_inference: 
+            x = self.lut_forward(x)
+            
+        else: 
+            if self.apply_input_quant:
+                x = self.input_quant(x)
+            x = self.pool(x)
+
+            if self.apply_output_quant:
+                x = self.output_quant(x)
+
+        return x
+
+    
+    def calculate_pooling_truth_tables(self): 
+        with torch.no_grad(): 
+            channel_state_space = []   
+            bin_channel_state_space = []
+            for k in range(self.pooling_kernel_size):
+                sample_state_space = self.input_quant.get_state_space()
+                bin_sample_state_space = self.input_quant.get_bin_state_space()
+                channel_state_space.append(sample_state_space)
+
+                bin_channel_state_space.append(bin_sample_state_space) 
+
+            print('the state space has been generated for: %s channels and kernels combinations' %(len(channel_state_space)))
+
+            out_channel_pooling_truth_table = []
+            for out_c in range(self.out_channels): 
+
+                connected_state_space = [channel_state_space[i] for i in range(self.pooling_kernel_size)] # was state_space_indices
+                bin_connected_state_space = [bin_channel_state_space[i] for i in range(self.pooling_kernel_size)]
+
+                permutation_matrix = generate_permutation_matrix(connected_state_space)
+                bin_permutation_matrix = generate_permutation_matrix(bin_connected_state_space)
+                print(bin_permutation_matrix.view(-1).shape)
+                num_permutations  = permutation_matrix.shape[0]
+
+                flattened = permutation_matrix.view(-1)
+                flattened_reshape = flattened.unsqueeze(0) 
+
+                padded_permutation_matrix = torch.zeros((self.out_channels, self.pooling_kernel_size, num_permutations))
+                reshaped_padded = padded_permutation_matrix.view(padded_permutation_matrix.size(0), padded_permutation_matrix.size(1)* padded_permutation_matrix.size(2)) # reshaped to broadcast 
+                reshaped_padded[out_c, :] = flattened_reshape
+                
+                apply_input_quant, apply_output_quant = self.apply_input_quant, self.apply_output_quant
+                self.apply_input_quant, self.apply_output_quant = False, False
+                is_bin_output = self.output_quant.is_bin_output
+                self.output_quant.float_output()
+                output_state = self.output_quant(self.forward(reshaped_padded))[out_c, :]
+                self.output_quant.bin_output()
+                bin_output_state = self.output_quant(self.forward(reshaped_padded))[out_c, :]
+                self.output_quant.is_bin_output = is_bin_output
+                self.apply_input_quant, self.apply_output_quant = apply_input_quant, apply_output_quant
+                # appending the necessary parameters into the channel truth table
+                out_channel_pooling_truth_table.append((out_c, bin_permutation_matrix, output_state, bin_output_state))
+                print('The truth table for the output channel %s has been generated' %out_c)
+        self.out_channel_pooling_truth_table = out_channel_pooling_truth_table
 
 # The classes below are defining the Random-Fixed-Sparsity mask for both layers type 
 # MLP layers mask

@@ -3,7 +3,6 @@ This file contains the Verilog functions that are to be used within layers, with
 '''
  
 
-
 def generate_register_verilog(module_name="myreg", param_name="DataWidth", input_name="data_in", output_name="data_out"):
     register_template = """\
 module {module_name} #(parameter {param_name}=512) (
@@ -20,6 +19,7 @@ module {module_name} #(parameter {param_name}=512) (
     end
 endmodule\n
 """
+
     return register_template.format(    module_name=module_name,
                                         param_name=param_name,
                                         input_name=input_name,
@@ -102,6 +102,8 @@ def generate_neuron_connection_verilog(input_indices, input_bitwidth):
     return connection_string
 
 
+
+
 def generate_neuron_connection_verilog_conv(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, total_channels, seq_length, padding):
     # in this function if the padded sequence was used instead of the original sequence length the function will not generate the correct starting offset. becuse the padding is perfromed later
     # hence, if the user wants to use the padded sequence, the the (seq_length+2*padding) in the start offest should be changed to have the seq_length argument alone.
@@ -121,4 +123,24 @@ def generate_neuron_connection_verilog_conv(active_channels, state_space_indices
                 connection_string += f"M0[{offset + b}]"
                 if not (channel == active_channels[-1] and idx == kernel_size - 1 and b == 0):
                     connection_string += ", "
+    return connection_string
+
+
+
+
+def generate_pooling_connection_verilog(input_channel, kernel_size, input_bitwidth, seq_length, seq_position):
+
+    connection_string = ""
+
+    for idx in range(kernel_size):
+        # Compute the offset for the current kernel element in the input channel
+        offset = (input_channel * seq_length * input_bitwidth + (seq_position + idx) * input_bitwidth)
+        # Collect the bits for this kernel position in reversed order
+        for b in reversed(range(input_bitwidth)):
+            connection_string += f"M0[{offset + b}]"
+            connection_string += ", "
+
+    # Remove the trailing comma and space
+    connection_string = connection_string.rstrip(", ")
+
     return connection_string
