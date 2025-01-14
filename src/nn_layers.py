@@ -882,33 +882,6 @@ class pooling_layer(nn.Module):
         return y
     
 
-    # def forward_tt(self, tensor):
-    #     # Check the shape of the input tensor
-    #     size_1, size_2 = tensor.shape
-
-    #     # Ensure the second dimension is at least 2
-    #     if size_2 < 2:
-    #         raise ValueError("Input tensor must have at least size 2 along the second dimension.")
-
-    #     # Initialize an empty list to store results
-    #     results = []
-
-    #     # Iterate over the tensor, taking 2-by-2 slices
-    #     for i in range(0, size_2, 2):
-    #         # Handle the case where the last slice has less than 2 elements
-    #         if i + 1 < size_2:
-    #             slice_ = tensor[:, i:i + 2]  # Take a 2-element slice
-                
-    #             max_values = slice_.max(dim=1).values  # Compute the maximum along the second dimension
-    #             results.append(max_values)
-    #         else:
-    #             # If there's only one element left, append it as-is
-    #             results.append(tensor[:, i])
-
-    #     # Concatenate results along the second dimension
-    #     result_tensor = torch.stack(results, dim=1)
-
-    #     return result_tensor
     
     def forward(self, x: Tensor) -> Tensor:
         if self.is_lut_inference: 
