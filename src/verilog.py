@@ -104,7 +104,7 @@ def generate_neuron_connection_verilog(input_indices, input_bitwidth):
 
 
 
-def generate_neuron_connection_verilog_conv(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, total_channels, seq_length, padding):
+def generate_channel_connection_verilog(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, total_channels, seq_length, padding):
     # in this function if the padded sequence was used instead of the original sequence length the function will not generate the correct starting offset. becuse the padding is perfromed later
     # hence, if the user wants to use the padded sequence, the the (seq_length+2*padding) in the start offest should be changed to have the seq_length argument alone.
     connection_string = ""

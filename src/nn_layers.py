@@ -22,7 +22,7 @@ from init import random_restrict_fanin
 from utils import fetch_mask_indices, fetch_mask_indices_edited, generate_permutation_matrix
 from verilog import    generate_lut_verilog, \
                         generate_neuron_connection_verilog, \
-                        generate_neuron_connection_verilog_conv, \
+                        generate_channel_connection_verilog, \
                         generate_pooling_connection_verilog, \
                         layer_connection_verilog, \
                         generate_logicnets_verilog, \
@@ -520,7 +520,7 @@ class SparseConv1dNeq(nn.Module):
             for seq_position in range(self.seq_length):
 
                 # Use both channel_indices and state_space_indices to generate connections
-                connection_string = generate_neuron_connection_verilog_conv(channel_indices, state_space_indices, input_bitwidth, seq_position, self.kernel_size, self.in_channels, self.seq_length, self.padding)
+                connection_string = generate_channel_connection_verilog(channel_indices, state_space_indices, input_bitwidth, seq_position, self.kernel_size, self.in_channels, self.seq_length, self.padding)
                 wire_name = f"{module_name}_seq_{seq_position}_wire" 
                 connection_line = f"wire [{len(state_space_indices)* input_bitwidth-1}:0] {wire_name} = {{{connection_string}}}; \n" 
                 inst_line = f"{module_name} {module_name}_seq_{seq_position}_inst (.M0({wire_name}), .M1(M1[{output_offset+output_bitwidth-1}:{output_offset}])); \n\n"
