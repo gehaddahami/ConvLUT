@@ -370,8 +370,8 @@ def train_cnn(model, train_cfg, options):
             'epoch': epoch
         }
 
-        torch.save(model_save, f"{options['log_dir']}/best_model_mnist_1dcnn.pth")
-        print(f"Model saved at {options['log_dir']}/best_model_mnist_1dcnn.pth")
+        torch.save(model_save, f"{options['log_dir']}/best_acc.pth")
+        print(f"Model saved at {options['log_dir']}/best_acc.pth")
         maxAcc = test_accuracy
 
             
