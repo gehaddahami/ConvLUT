@@ -1,5 +1,20 @@
+#  Copyright (C) 2021 Xilinx, Inc
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 '''
-This file contains the Verilog functions that are to be used within layers, within neurons or for the entire model 
+This file contains the Verilog functions that are to be used to format the Verilog files. 
+1D-CNN Verilog functions are developed by the author/s of this project.
 '''
  
 
@@ -45,7 +60,6 @@ endmodule\n"""
 
 
 
-
 def layer_connection_verilog(layer_string: str, input_string: str, input_bits: int, output_string: str, output_bits: int, output_wire=True, register=False):
     if register:
         layer_connection_template = """\
@@ -63,7 +77,6 @@ assign {input_string}w = {input_string};\n"""
                                                 input_bits_1=input_bits-1,
                                                 output_string=output_string,
                                                 output_bits_1=output_bits-1)
-
 
 
 
@@ -104,21 +117,17 @@ def generate_neuron_connection_verilog(input_indices, input_bitwidth):
 
 
 
+
 def generate_channel_connection_verilog(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, total_channels, seq_length, padding):
-    # in this function if the padded sequence was used instead of the original sequence length the function will not generate the correct starting offset. becuse the padding is perfromed later
-    # hence, if the user wants to use the padded sequence, the the (seq_length+2*padding) in the start offest should be changed to have the seq_length argument alone.
     connection_string = ""
     for channel in active_channels:
-        # Calculate the starting bit offset for the current active channel and sequence position
         start_offset = channel * (seq_length + 2*padding) * input_bitwidth + seq_position * input_bitwidth
         for idx in range(kernel_size):
-            # print('idx ',idx)
             if idx >= len(state_space_indices):  # Stop if kernel_size exceeds state_space_indices length
                 break
             index = state_space_indices[idx]
             offset = start_offset + idx * input_bitwidth
-            # print('offset', offset)
-            # Collect the bits for this index position
+            
             for b in reversed(range(input_bitwidth)):
                 connection_string += f"M0[{offset + b}]"
                 if not (channel == active_channels[-1] and idx == kernel_size - 1 and b == 0):
@@ -128,19 +137,17 @@ def generate_channel_connection_verilog(active_channels, state_space_indices, in
 
 
 
+
 def generate_pooling_connection_verilog(input_channel, kernel_size, input_bitwidth, seq_length, seq_position):
 
     connection_string = ""
 
     for idx in range(kernel_size):
-        # Compute the offset for the current kernel element in the input channel
         offset = (input_channel * seq_length * input_bitwidth + (seq_position + idx) * input_bitwidth)
-        # Collect the bits for this kernel position in reversed order
         for b in reversed(range(input_bitwidth)):
             connection_string += f"M0[{offset + b}]"
             connection_string += ", "
 
-    # Remove the trailing comma and space
     connection_string = connection_string.rstrip(", ")
 
     return connection_string

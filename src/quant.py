@@ -1,9 +1,24 @@
+#  Copyright (C) 2021 Xilinx, Inc
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 '''
-- This file contains the quantization class for the inputs/outputs through the activation functions. 
-- The class contains funtions that are cruical for the software-hardware co-design. 
-- The majority of this class is adapted from the paper: 
-"LogicNets: Co-Designed Neural Networks and Circuits for Extreme-Throughput Applications" 
-- The file also contains another classes for the output bias and scaling. '''
+Edits in this class include updating some calls to align with the new release of the Brevitas Library.
+Also, deactivate_transforms() and activate_transforms() add functions added for the pooling layes to ensure no transforms are applied
+during truth table generation for pooling layers. 
+'''
+
+
 
 # Imports 
 import torch
@@ -65,6 +80,15 @@ class QuantBrevitasActivation(nn.Module):
     # TODO: Move to a base class
     def float_output(self):
         self.is_bin_output = False
+
+    def deactivate_transforms(self): 
+        self.pre_transforms = nn.ModuleList()
+        self.post_transforms = nn.ModuleList() 
+    
+    def activate_transforms(self):
+        self.pre_transforms = self.pre_transforms
+        self.post_transforms = self.post_transforms
+    
 
     def get_quant_type(self): 
         brevitas_module_type = type(self.brevitas_module.act_quant.fused_activation_quant_proxy.tensor_quant)
@@ -133,9 +157,10 @@ class QuantBrevitasActivation(nn.Module):
         else:
             x = self.apply_pre_transforms(x)
             x = self.brevitas_module(x)
-            x = self.apply_post_transforms(x)
+            x= self.apply_post_transforms(x)
         return x
     
+
 
 # The scaling and bias classes. one applies scaling before the bias and the other does the opposite
 class ScalarScaleBias(nn.Module):
@@ -166,6 +191,7 @@ class ScalarScaleBias(nn.Module):
         if self.bias is not None:
             x = x + self.bias
         return x
+
 
 
 class ScalarBiasScale(ScalarScaleBias):

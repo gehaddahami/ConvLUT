@@ -1,10 +1,23 @@
+#  Copyright (C) 2021 Xilinx, Inc
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 '''
-This file contains some utilty functions: 
-1- function to get the mask indices for the activated neurons to be identified
-2- function to get all the possible input permutations for the truth table generation
-3- 
-4- 
+The functions included in this files are developed by LogicNets.
+fetch_mask_indices_edited() function is edited for CNN processing purposes.
 '''
+
+
 # Imports 
 import os
 import subprocess
@@ -32,6 +45,7 @@ def fetch_mask_indices(mask: torch.Tensor) -> torch.LongTensor:
         indices[i] = ind
         local_mask[ind] = 0
     return tuple(indices)
+
 
 
 # NOTE: This function might be replace the original function as it can fetch the indices after determining the dimensionality of the mask. Hence, It will work for both CNN and MLP layers
@@ -89,6 +103,7 @@ def generate_permutation_matrix(input_state_space) -> torch.Tensor:
             next_perm = next_perm // div_factor
 
     return permutations_matrix
+
 
 
 # Prepare a directory for simulating post-synthesis verilog from Vivado.
