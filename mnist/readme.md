@@ -34,13 +34,14 @@ Then, generate verilog:
 python neq2lut.py --arch <mlp8|mlp16|mlp28> --checkpoint ./<best_acc>/best_acc.pth --log-dir ./<mlp8|mlp16|mlp28>/verilog/ 
 ```
 
-# To train the CNN configurations 
+# To train the MLP configurations 
+Train:
 
 ```bash
 python train.py --arch <cnn8|cnn16> --log-dir ./<cnn8|cnn16>/
 ```
 
-To then generate verilog from this trained model, run the following:
+To then generate verilog:
 
 ```bash
 python neq2lut.py --arch <cnn8|cnn16> --checkpoint ./<cnn8|cnn16>/best_acc.pth --log-dir ./<cnn8|cnn16>/verilog/ 
