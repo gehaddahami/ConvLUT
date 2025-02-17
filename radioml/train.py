@@ -179,7 +179,7 @@ def train(model, dataset, train_cfg, options):
         torch.save(model_save, options["log_dir"] + "/config_1.pth")
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="LogicNets Jet Substructure Classification (RadioML Example)")
+    parser = ArgumentParser(description="LogicNets Classification (RadioML Example)")
     parser.add_argument('--arch', type=str, choices=configs.keys(), default="psk-5",
         help="Specific the neural network model to use (default: %(default)s)")
     parser.add_argument('--batch-size', type=int, default=None, metavar='N',
