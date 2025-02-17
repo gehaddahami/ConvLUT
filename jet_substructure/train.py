@@ -12,6 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+'''
+Additional functionality has been incorporated to train and test 1D-CNN functions 
+'''
+
 import os
 from argparse import ArgumentParser
 from functools import reduce
@@ -28,7 +32,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset import JetSubstructureDataset
-from models import JetSubstructureNeqModel
+from models import JetSubstructureNeqModel, QuantizedJSC_CNN_NEQ
 
 # TODO: Replace default configs with YAML files.
 configs = {
@@ -57,7 +61,7 @@ configs = {
         "output_fanin": 4,
         "weight_decay": 1e-3,
         "batch_size": 1024,
-        "epochs": 1000,
+        "epochs": 100,
         "learning_rate": 1e-3,
         "seed": 3,
         "checkpoint": None,
@@ -72,11 +76,54 @@ configs = {
         "output_fanin": 5,
         "weight_decay": 1e-3,
         "batch_size": 1024,
-        "epochs": 1000,
+        "epochs": 100,
         "learning_rate": 1e-3,
         "seed": 16,
         "checkpoint": None,
     },
+
+    "jsc-cnn-s": {
+        # "input_length": 1,
+        "sequence_length": 16, 
+        "hidden_layers": [4] * 2 + [64] + [32],
+        "output_length": 1,
+        "padding": 1, 
+        "1st_layer_in_f": 64, 
+        "input_bitwidth": 3,
+        "hidden_bitwidth": 2,
+        "output_bitwidth": 3,
+        "input_fanin": 1,
+        "conv_fanin": 2,
+        "hidden_fanin": 4,
+        "output_fanin": 4,
+        "weight_decay": 1e-3,
+        "batch_size": 1024,
+        "epochs": 100,
+        "learning_rate": 1e-3,
+        "checkpoint": None,
+        "seed": 16,
+    }, 
+    "jsc-cnn-l": {
+        # "input_length": 1,
+        "sequence_length": 16, 
+        "hidden_layers": [4] * 4 + [128] * 2,
+        "output_length": 1,
+        "padding": 1, 
+        "1st_layer_in_f": 64, 
+        "input_bitwidth": 5,
+        "hidden_bitwidth": 2,
+        "output_bitwidth": 5,
+        "input_fanin": 1,
+        "conv_fanin": 2,
+        "hidden_fanin": 4,
+        "output_fanin": 5,
+        "weight_decay": 1e-3,
+        "batch_size": 1024,
+        "epochs": 100,
+        "learning_rate": 1e-3,
+        "checkpoint": None,
+        "seed": 16,
+    }
 }
 
 # A dictionary, so we can set some defaults if necessary
@@ -86,8 +133,12 @@ model_config = {
     "hidden_bitwidth": None,
     "output_bitwidth": None,
     "input_fanin": None,
+    "conv_fanin": None,
     "hidden_fanin": None,
     "output_fanin": None,
+    "sequence_length": None,
+    "padding": None,
+    "1st_layer_in_f": None,
 }
 
 training_config = {
@@ -109,7 +160,7 @@ other_options = {
     "checkpoint": None,
 }
 
-def train(model, datasets, train_cfg, options):
+def train(model, datasets, train_cfg, options, topology_type='cnn'):
     # Create data loaders for training and inference:
     train_loader = DataLoader(datasets["train"], batch_size=train_cfg['batch_size'], shuffle=True)
     val_loader = DataLoader(datasets["valid"], batch_size=train_cfg['batch_size'], shuffle=False)
@@ -157,6 +208,11 @@ def train(model, datasets, train_cfg, options):
         accLoss = 0.0
         correct = 0
         for batch_idx, (data, target) in enumerate(train_loader):
+
+            if topology_type == 'cnn':
+                # Reshape from (batch_size, features) to (batch_size, channels, height, width)
+                data = data.view(data.size(0), 1, -1)
+
             if options["cuda"]:
                 data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
@@ -205,7 +261,8 @@ def train(model, datasets, train_cfg, options):
         writer.add_scalar('test_avg_roc_auc', test_avg_roc_auc, (epoch+1)*steps)
         print(f"Epoch: {epoch}/{num_epochs}\tValid Acc (%): {val_accuracy:.2f}\tTest Acc: {test_accuracy:.2f}")
 
-def test(model, dataset_loader, cuda):
+
+def test(model, dataset_loader, cuda, topology_type='cnn'):
     with torch.no_grad():
         model.eval()
         entire_prob = None
@@ -215,9 +272,14 @@ def test(model, dataset_loader, cuda):
         for batch_idx, (data, target) in enumerate(dataset_loader):
             if cuda:
                 data, target = data.cuda(), target.cuda()
+
+            if topology_type == 'cnn':
+                # Reshape from (batch_size, features) to (batch_size, channels, height, width)
+                data = data.view(data.size(0), 1, -1)
             output = model(data)
             prob = F.softmax(output, dim=1)
             pred = output.detach().max(1, keepdim=True)[1]
+            
             target_label = torch.max(target.detach(), 1, keepdim=True)[1]
             curCorrect = pred.eq(target_label).long().sum()
             curAcc = 100.0*curCorrect / len(data)
@@ -231,6 +293,7 @@ def test(model, dataset_loader, cuda):
         accuracy = 100*float(correct) / len(dataset_loader.dataset)
         avg_roc_auc = roc_auc_score(golden_ref.detach().cpu().numpy(), entire_prob.detach().cpu().numpy(), average='macro', multi_class='ovr')
         return accuracy, avg_roc_auc
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="LogicNets Jet Substructure Classification Example")
@@ -256,12 +319,20 @@ if __name__ == "__main__":
         help="Bitwidth to use at the output (default: %(default)s)")
     parser.add_argument('--input-fanin', type=int, default=None,
         help="Fanin to use at the input (default: %(default)s)")
+    parser.add_argument('--conv-fanin', type=int, default=None,
+        help="Fanin to use for the convolutional layers (default: %(default)s)")
     parser.add_argument('--hidden-fanin', type=int, default=None,
         help="Fanin to use for the hidden layers (default: %(default)s)")
     parser.add_argument('--output-fanin', type=int, default=None,
         help="Fanin to use at the output (default: %(default)s)")
     parser.add_argument('--hidden-layers', nargs='+', type=int, default=None,
         help="A list of hidden layer neuron sizes (default: %(default)s)")
+    parser.add_argument('--sequence-length', nargs='+', type=int, default=None,
+        help="The length of the input sequence (default: %(default)s)")
+    parser.add_argument('--1st-layer-in-f', type=int, default=None,
+        help="The input feature size of the first layer (default: %(default)s)")
+    parser.add_argument('--padding', type=str, default=None,
+        help="The padding to use for the input sequence (default: %(default)s)")
     parser.add_argument('--log-dir', type=str, default='./log',
         help="A location to store the log output of the training run and the output model (default: %(default)s)")
     parser.add_argument('--dataset-file', type=str, default='data/processed-pythia82-lhc13-all-pt1-50k-r1_h022_e0175_t220_nonu_truth.z',
@@ -270,6 +341,8 @@ if __name__ == "__main__":
         help="The file to use to configure the input dataset (default: %(default)s)")
     parser.add_argument('--checkpoint', type=str, default=None,
         help="Retrain the model from a previous checkpoint (default: %(default)s)")
+    parser.add_argument('--topology', type = str, default=None, 
+        help="Type of topology to use (default: %(default)s)")
     args = parser.parse_args()
     defaults = configs[args.arch]
     options = vars(args)
@@ -307,18 +380,30 @@ if __name__ == "__main__":
     # Fetch the datasets
     dataset = {}
     dataset['train'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="train")
-    dataset['valid'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="train") # This dataset is so small, we'll just use the training set as the validation set, otherwise we may have too few trainings examples to converge.
+    dataset['valid'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="train") 
     dataset['test'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="test")
 
     # Instantiate model
     x, y = dataset['train'][0]
-    model_cfg['input_length'] = len(x)
-    model_cfg['output_length'] = len(y)
-    model = JetSubstructureNeqModel(model_cfg)
+    if args.topology == 'cnn':
+        model_cfg['input_length'] = 1 #len(x)
+        model_cfg['sequence_length'] = len(x) 
+        print('model_cfg:', model_cfg)
+        model_cfg['output_length'] = len(y)
+        torch.manual_seed(train_cfg['seed'])
+        np.random.seed(train_cfg['seed'])
+        model = QuantizedJSC_CNN_NEQ(model_cfg)
+    else:
+        model_cfg['input_length'] = len(x)
+        print('model_cfg:', model_cfg)
+        model_cfg['output_length'] = len(y)
+        torch.manual_seed(train_cfg['seed'])
+        np.random.seed(train_cfg['seed'])
+        model = JetSubstructureNeqModel(model_cfg)
+
     if options_cfg['checkpoint'] is not None:
         print(f"Loading pre-trained checkpoint {options_cfg['checkpoint']}")
         checkpoint = torch.load(options_cfg['checkpoint'], map_location='cpu')
         model.load_state_dict(checkpoint['model_dict'])
 
-    train(model, dataset, train_cfg, options_cfg)
-
+    train(model, dataset, train_cfg, options_cfg, topology_type='cnn')

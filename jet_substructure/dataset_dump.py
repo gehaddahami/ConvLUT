@@ -21,31 +21,45 @@ from functools import reduce
 import torch
 from torch.utils.data import DataLoader
 
-from nn_layers import    generate_truth_tables, \
-                            lut_inference, \
-                            module_list_to_verilog_module
-
 from train import configs, model_config, dataset_config, other_options, test
 from dataset import JetSubstructureDataset
 from models import JetSubstructureNeqModel, JetSubstructureLutModel
-from synthesis import synthesize_and_get_resource_counts
+from models import JetSubstructureNeqModel, JetSubstructureLutModel, Quantized_JSC_LUT, Quantized_JSC_Verilog, QuantizedJSC_CNN_NEQ
 
-def dump_io(model, data_loader, input_file, output_file):
+def dump_io(model, data_loader, input_file, output_file, topology):
     input_quant = model.module_list[0].input_quant
     _, input_bitwidth = input_quant.get_scale_factor_bits()
     input_bitwidth = int(input_bitwidth)
-    total_input_bits = model.module_list[0].in_features*input_bitwidth
+    total_input_bits = model.module_list[0].in_channels*input_bitwidth* (model.module_list[0].seq_length + 2)
+    print(f"Total input bits: {total_input_bits}")
     input_quant.bin_output()
+    padding_tensor = torch.full((1, 1), 0, dtype=torch.int64)  # 2-bit padding
     with open(input_file, 'w') as i_f, open(output_file, 'w') as o_f:
         for data, target in data_loader:
-            x = input_quant(data)
-            indices = torch.argmax(target,dim=1)
-            for i in range(x.shape[0]):
-                x_i = x[i,:]
-                xv_i = list(map(lambda z: input_quant.get_bin_str(z), x_i))
-                xvc_i = reduce(lambda a,b: a+b, xv_i[::-1])
-                i_f.write(f"{int(xvc_i,2):0{int(total_input_bits)}b}\n")
-                o_f.write(f"{int(indices[i])}\n")
+            if topology == 'cnn':
+                reshaped_data = data.view(data.size(0), 1, -1)
+                print('shape of the data:', reshaped_data.shape)
+                data_padded = torch.cat([padding_tensor.repeat(reshaped_data.shape[0], reshaped_data.shape[1], 1), reshaped_data, padding_tensor.repeat(reshaped_data.shape[0], reshaped_data.shape[1], 1)], dim=-1)
+                print('shape of the data after padding:', data_padded.shape)
+                x = input_quant(data_padded)
+                indices = torch.argmax(target,dim=1)
+                for i in range(x.shape[0]):
+                # x_i = x[i,:]
+                    x_i = x[i, :, :].flatten()
+                    xv_i = list(map(lambda z: input_quant.get_bin_str(z), x_i))
+                    xvc_i = reduce(lambda a,b: a+b, xv_i[::-1])
+                    i_f.write(f"{int(xvc_i,2):0{int(total_input_bits)}b}\n")
+                    o_f.write(f"{int(indices[i])}\n")
+            else: 
+                x = input_quant(data)
+                indices = torch.argmax(target,dim=1)
+                for i in range(x.shape[0]):
+                    x_i = x[i,:]
+                    xv_i = list(map(lambda z: input_quant.get_bin_str(z), x_i))
+                    xvc_i = reduce(lambda a,b: a+b, xv_i[::-1])
+                    i_f.write(f"{int(xvc_i,2):0{int(total_input_bits)}b}\n")
+                    o_f.write(f"{int(indices[i])}\n")
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Dump the train and test datasets (after input quantization) into text files")
@@ -75,6 +89,8 @@ if __name__ == "__main__":
         help="A location to store the output I/O text files (default: %(default)s)")
     parser.add_argument('--checkpoint', type=str, default='/home/student/CNN_LogicNets/jet_substructure/jsc_s/best_accuracy.pth',
         help="The checkpoint file which contains the model weights")
+    parser.add_argument('--topology', type=str, choices=['cnn', 'fc'], default='cnn',
+        help="The topology of the model (default: %(default(s))")
     args = parser.parse_args()
     defaults = configs[args.arch]
     options = vars(args)
@@ -108,9 +124,17 @@ if __name__ == "__main__":
 
     # Instantiate the PyTorch model
     x, y = dataset["train"][0]
-    model_cfg['input_length'] = len(x)
-    model_cfg['output_length'] = len(y)
-    model = JetSubstructureNeqModel(model_cfg)
+    if args.topology == 'cnn':
+        model_cfg['input_length'] = 1 #len(x)
+        model_cfg['sequence_length'] = len(x) 
+        print('model_cfg:', model_cfg)
+        model_cfg['output_length'] = len(y)
+        model = QuantizedJSC_CNN_NEQ(model_cfg)
+    else:
+        model_cfg['input_length'] = len(x)
+        print('model_cfg:', model_cfg)
+        model_cfg['output_length'] = len(y)
+        model = JetSubstructureNeqModel(model_cfg)
 
     # Load the model weights
     checkpoint = torch.load(options_cfg['checkpoint'], map_location='cpu')
@@ -119,7 +143,7 @@ if __name__ == "__main__":
     # Test the PyTorch model
     print("Running inference on baseline model...")
     model.eval()
-    baseline_accuracy, baseline_avg_roc_auc = test(model, test_loader, cuda=False)
+    baseline_accuracy, baseline_avg_roc_auc = test(model, test_loader, cuda=False, topology_type=args.topology)
     print("Baseline accuracy: %f" % (baseline_accuracy))
     print("Baseline AVG ROC AUC: %f" % (baseline_avg_roc_auc))
 
