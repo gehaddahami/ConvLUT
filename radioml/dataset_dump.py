@@ -171,6 +171,3 @@ if __name__ == "__main__":
     print(f"Dumping test I/O to {test_input_file} and {test_output_file}")
     dump_io(model, test_loader, test_input_file, test_output_file)
     
-
-if __name__ == "__main__":
-    main()
