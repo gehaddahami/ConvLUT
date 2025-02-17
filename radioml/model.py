@@ -1,7 +1,9 @@
 '''
-This is the model architecture for RadioML. 
-The first linear layer still need to be modified by deceiding the number of the input featrues dynamically without the need 
-to manually reconfigure it everytime based on the sequence length and the number of channels of the used dataset
+CNN topology for RadioML in LogicNets. 
+
+If the number of layers is changed: 
+1- change the values in the hidden pooling layers (excluding last layer)
+2- the current order is conv-pool-conv-pool-....-linear-linear-last, changing this means changing the "if" statements accordingly
 ''' 
 
 
@@ -23,49 +25,40 @@ from pyverilator import PyVerilator
 
 import sys 
 import os
-# # Get the absolute path of the directory where model.py is located
+# Get the absolute path of the directory where model.py is located
 base_path = os.path.dirname(os.path.abspath(__file__))
 
-# # Append the absolute path to the src directory
+# Append the absolute path to the src directory
 sys.path.append(os.path.join(base_path, '../src/'))
 
-# print(sys.path) 
-
-# sys.path.append('../src/')
-# print(sys.path)
-
 # Importing functions from the directory 
-
-from nn_layers import SparseConv1dNeq, SparseLinearNeq, RandomFixedSparsityMask2D, RandomFixedSparsityConv1DMask # type: ignore
+from nn_layers import SparseConv1dNeq, SparseLinearNeq, pooling_layer, RandomFixedSparsityMask2D, RandomFixedSparsityConv1DMask # type: ignore
 from quant import QuantBrevitasActivation, ScalarBiasScale, ScalarScaleBias # type: ignore
-
-
 
 
 class QuantizedRadiomlNEQ(nn.Module):
     def __init__(self, model_config): 
         super(QuantizedRadiomlNEQ, self).__init__()
         self.model_config = model_config
-        self.maxpool = nn.MaxPool1d(2)
         self.num_neurons = [self.model_config['input_length']] + self.model_config['hidden_layers'] + [self.model_config['output_length']]
         seq_length = model_config['sequence_length']
         layer_list = []
-
+        conv_layer_list = []
 
         # QNN model structure 
         for i in range(1, len(self.num_neurons)): 
             in_features = self.num_neurons[i-1]
             out_features = self.num_neurons[i]
             
+            print(f'layer: {i}, in_features = {in_features}, out_features = {out_features}')
             # applying batch norm for the out_features in each layer
             bn = nn.BatchNorm1d(out_features) 
-            maxpool = nn.MaxPool1d(2)
 
             if  i == 1:   # first layer architecture 
                 input_quantized = QuantBrevitasActivation(QuantHardTanh(bit_width=model_config['input_bitwidth'], max_val=2.0, min_val=-2.0, quant_type=QuantType.INT, scaling_imp_type=ScalingImplType.CONST), pre_transforms=None, post_transforms=None)
                 output_quantized = QuantBrevitasActivation(QuantReLU(bit_width=model_config['hidden_bitwidth'], max_val=2.0, min_val=-2.0, quant_type=QuantType.INT, scaling_imp_type=ScalingImplType.PARAMETER), pre_transforms=[bn], post_transforms=None)
                 mask = RandomFixedSparsityConv1DMask(out_channels=out_features, in_channels=in_features, kernel_size=3, fan_in =model_config['input_fanin']) 
-                layer = SparseConv1dNeq(in_channels=in_features, out_channels=out_features, kernel_size=3, seq_length=seq_length, input_quant=input_quantized, output_quant=output_quantized, mask=mask, padding=model_config['padding'])
+                layer = SparseConv1dNeq(in_channels=in_features, out_channels=out_features, kernel_size=3, seq_length=seq_length, input_quant=input_quantized, output_quant=output_quantized, mask=mask, padding=model_config['padding'], cnn_output=False)
                 layer_list.append(layer)
                 
             elif  i == len(self.num_neurons)-1:   # last layer architecture 
@@ -86,22 +79,26 @@ class QuantizedRadiomlNEQ(nn.Module):
                 mask = RandomFixedSparsityMask2D(in_features=model_config['1st_layer_in_f'], out_features=out_features, fan_in=model_config['hidden_fanin'])
                 layer = SparseLinearNeq(in_features=model_config['1st_layer_in_f'], out_features=out_features, input_quant=layer_list[-1].output_quant, output_quant=output_quantized, mask=mask, reshaped_in_features = model_config['1st_layer_in_f'], apply_input_quant=False, first_linear=True, bias=True)
                 layer_list.append(layer)
+            
+            elif  i in {2, 4, 6, 8, 10, 12}:   # pooling layers architecture  Use 'in {2}' if more than one layer is pooling 
+                output_quantized = QuantBrevitasActivation(QuantIdentity(bit_width=model_config['hidden_bitwidth'], max_val=5.0, min_val=-5.0, quant_type=QuantType.INT, scaling_imp_type=ScalingImplType.CONST))
+                layer = pooling_layer(in_channels=in_features, out_channels=out_features, seq_length=seq_length, input_quant=layer_list[-1].output_quant, output_quant=layer_list[-1].output_quant, pooling_kernel_size=2, apply_input_quant=False, apply_output_quant=False, cnn_input=True)
+                layer_list.append(layer)
+                seq_length = seq_length // 2
+                self.seq_length = seq_length
 
-            elif i == len(self.num_neurons)-4:   # hidden conv layers architecture 
-                # seq_length = (seq_length + (2 * model_config['padding'])- 3) // 2 
+            elif  i == len(self.num_neurons)-4 :   # last pooling layers architecture 
+                output_quantized = QuantBrevitasActivation(QuantIdentity(bit_width=model_config['hidden_bitwidth'], max_val=5.0, min_val=-5.0, quant_type=QuantType.INT, scaling_imp_type=ScalingImplType.CONST))
+                layer = pooling_layer(in_channels=in_features, out_channels=out_features, seq_length=seq_length, input_quant=layer_list[-1].output_quant, output_quant=layer_list[-1].output_quant, pooling_kernel_size=2, apply_input_quant=False, apply_output_quant=False, cnn_input=False)
+                layer_list.append(layer)
+                seq_length = seq_length // 2
+                self.seq_length = seq_length
+
+            else:   # hidden conv layers architecture 
                 output_quantized = QuantBrevitasActivation(QuantReLU(bit_width=model_config['hidden_bitwidth'], max_val=2.0, min_val=-2.0, quant_type=QuantType.INT, scaling_imp_type=ScalingImplType.PARAMETER), pre_transforms=[bn], post_transforms=None)
                 mask = RandomFixedSparsityConv1DMask(out_channels=out_features, in_channels=in_features, kernel_size=3, fan_in=model_config['conv_fanin'] )
                 layer = SparseConv1dNeq(in_channels=in_features, out_channels=out_features, kernel_size=3, seq_length=seq_length, input_quant=layer_list[-1].output_quant, output_quant=output_quantized, mask=mask, padding=model_config['padding'], apply_input_quant=False, cnn_output=False)
                 layer_list.append(layer)
-
-            else:   # hidden conv layers architecture 
-                # seq_length = (seq_length + (2 * model_config['padding'])- 3) // 2 
-                output_quantized = QuantBrevitasActivation(QuantReLU(bit_width=model_config['hidden_bitwidth'], max_val=2.0, min_val=-2.0, quant_type=QuantType.INT, scaling_imp_type=ScalingImplType.PARAMETER), pre_transforms=[bn], post_transforms=None)
-                mask = RandomFixedSparsityConv1DMask(out_channels=out_features, in_channels=in_features, kernel_size=3, fan_in=model_config['conv_fanin'] )
-                layer = SparseConv1dNeq(in_channels=in_features, out_channels=out_features, kernel_size=3, seq_length=seq_length, input_quant=layer_list[-1].output_quant, output_quant=output_quantized, mask=mask, padding=model_config['padding'], apply_input_quant=False)
-                layer_list.append(layer)
-
-
 
         self.module_list = nn.ModuleList(layer_list)
         self.is_verilog_inference = False 
@@ -111,7 +108,6 @@ class QuantizedRadiomlNEQ(nn.Module):
         self.dut = None
         self.log_file = None 
     
-
     
     def verilog_inference(self, verilog_dir, top_module_filename, log_file: bool = False, add_registers: bool = False): 
         self.verilog_dir = realpath(verilog_dir) 
@@ -125,7 +121,8 @@ class QuantizedRadiomlNEQ(nn.Module):
     
     def pytorch_inference(self): 
         self.is_verilog_inference = False
-    
+
+
     def verilog_forward(self, x): 
         # get integer output from the first layer 
         input_quant = self.module_list[0].input_quant
@@ -169,20 +166,12 @@ class QuantizedRadiomlNEQ(nn.Module):
             if self.log_file is not None: 
                 with open(self.log_file, 'a') as f:
                     f.write(f'{int(xvc_i, 2):0{int(total_input_bits)}b}{int(ysc_i, 2):0{int(total_output_bits)}b}\n')
-
             return y 
     
 
     def pytorch_forward(self, x): 
-        
         for i, layer in enumerate(self.module_list): 
             x = layer(x)
-            
-            # if i < 4:
-            #     # print('x shape before the maxpool is: ', x.shape)
-            #     x = self.maxpool(x)
-                # print('x shape after the maxpool is: ', x.shape)
-    
         return x 
     
 
@@ -195,16 +184,7 @@ class QuantizedRadiomlNEQ(nn.Module):
 
         else: 
             x = self.pytorch_forward(x)
-            # scale output if necessary 
-            # if self.module_list[-1].is_lut_inference: 
-            #     output_scale, output_bits = self.module_list[-1].output_quant.get_scale_factor_bits()
-            #     print(f' the output scale is: {output_scale}')
-            #     print(f' the output before applying the scaling is: {x}')
-            #     x = self.module_list[-1].output_quant.apply_post_transforms(x * output_scale) 
-            #     print(f'the output scaling has been applied to x {x}')
-            
-        return x 
-    
+        return x    
 
 
 # LUT-model

@@ -1,8 +1,8 @@
 '''
-This file contains the data loader for the RadioML dataset. 
-The class is created in a way that specific modulations can be imported and their relative sequence length can also be chosen. 
-This is done to reduce the complexity to ensure that the concept of processing 1D-CNN via LogicNets Framework is properly working. 
-- The dataset full content is to be added and processed in the future '''
+The original data loader is adapted from "https://github.com/Xilinx/brevitas-radioml-challenge-21/blob/main/sandbox/notebooks/training_and_evaluation.ipynb"
+
+However, some adjustments to load a subset from the 24 modulations and re-distribute the labels are done in the context of this project
+'''
 
 # Imports 
 import numpy as np 
@@ -21,24 +21,28 @@ class Radioml_18(Dataset):
         self.data = h5py_file['X']
         self.modulations = np.argmax(h5py_file['Y'], axis=1)
         self.snr = h5py_file['Z'][:, 0]
-        self.len = self.data.shape[0]
         self.snr_ratio = snr_ratio
         self.sequence_length = sequence_length if sequence_length is not None else self.data.shape[1]
 
-        # Default to BPSK and QPSK if no modulations are specified
-        if selected_modulations is None:
-            selected_modulations = ['BPSK', 'QPSK']
+        # Define full list of modulations
+        all_modulations = ['OOK', '4ASK', '8ASK', 'BPSK', 'QPSK', '8PSK', '16PSK', '32PSK',
+                           '16APSK', '32APSK', '64APSK', '128APSK', '16QAM', '32QAM', '64QAM', '128QAM', '256QAM',
+                           'AM-SSB-WC', 'AM-SSB-SC', 'AM-DSB-WC', 'AM-DSB-SC', 'FM', 'GMSK', 'OQPSK']
 
-        self.mod_classes = ['OOK', '4ASK', '8ASK', 'BPSK', 'QPSK', '8PSK', '16PSK', '32PSK',
-                            '16APSK', '32APSK', '64APSK', '128APSK', '16QAM', '32QAM', '64QAM', '128QAM', '256QAM',
-                            'AM-SSB-WC', 'AM-SSB-SC', 'AM-DSB-WC', 'AM-DSB-SC', 'FM', 'GMSK', 'OQPSK']
+        # Default modulations if not provided
+        if not isinstance(selected_modulations, list):
+            selected_modulations = ['OOK', '4ASK', '8ASK', 'BPSK', 'QPSK', '8PSK', '16PSK', 'AM-SSB-WC', 
+                                    'AM-DSB-WC', 'AM-DSB-SC', 'FM', 'GMSK', 'OQPSK']
+
+        # Ensure `selected_modulations` exists in the full list
+        self.mod_classes = [mod for mod in all_modulations if mod in selected_modulations]
+
+        # Get corresponding indices
+        mod_indices_to_include = [all_modulations.index(mod) for mod in self.mod_classes]
 
         self.snr_classes = np.arange(-20., 31., 2)
 
-        # Create a list of modulation indices to include based on the selected modulations
-        mod_indices_to_include = [self.mod_classes.index(mod) for mod in selected_modulations]
-
-        # Filter the data based on selected modulations
+        # Filter data based on selected modulations
         data_masking = np.isin(self.modulations, mod_indices_to_include)
         self.data = self.data[data_masking]
         self.modulations = self.modulations[data_masking]
@@ -49,9 +53,7 @@ class Radioml_18(Dataset):
         self.modulations = np.array([self.label_mapping[mod] for mod in self.modulations])
 
         np.random.seed(2018)
-        train_indices = []
-        validation_indices = []
-        test_indices = []
+        train_indices, validation_indices, test_indices = [], [], []
 
         # Iterate over the selected modulation indices
         for new_mod_label in range(len(mod_indices_to_include)):
@@ -103,11 +105,9 @@ class Radioml_18(Dataset):
         for orig_label, mapped_label in self.label_mapping.items():
             if mapped_label == new_label:
                 return self.mod_classes[orig_label]
+
             
-
-
 # Below is the original Dataloader adapted from the RadioML repository provided by XILINX 
-
 class Radioml_18_original(Dataset):
     def __init__(self, dataset_path): 
         super(Radioml_18, self).__init__()

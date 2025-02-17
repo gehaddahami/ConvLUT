@@ -1,33 +1,27 @@
-
+'''
+This file contains the training loop, testing loop, and the plotting functions for the loss curve and the cofusion matrix
+'''
 # Imports 
+import os 
 import torch
 import numpy as np 
 import matplotlib.pyplot as plt 
 from tqdm.notebook import tqdm 
 from sklearn.metrics import accuracy_score
 
-# the functions below are different traininf and testing loops that are used baed on the classification nature whether it is binary or multicalss, or weather or not the sigmoid function is to be tested 
-def train_loop_pytorch(model, train_loader, optimizer, criterion, options):
-    losses = []
-    model.train()
 
-    for (inputs, labels, snr) in train_loader:  
-        if options['cuda']: 
-            inputs, labels = inputs.cuda(), labels.cuda()
 
-        # Forward pass 
-        output = model(inputs) 
-        loss = criterion(output, labels)
-
-        # Backward pass and optimizer
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        losses.append(loss.item())  # Use .item() to get the scalar value of the loss
-
-    return losses
-
+def plot_confusion_matrix(cm, title='Confusion matrix', cmap=plt.cm.Blues, labels=[]):
+    plt.figure(figsize=(12,8), dpi=800)
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(labels))
+    plt.xticks(tick_marks, labels, rotation=90)
+    plt.yticks(tick_marks, labels)
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
 
 
 def train_logicnets(model, train_loader, optimizer, criterion, options): 
@@ -36,21 +30,16 @@ def train_logicnets(model, train_loader, optimizer, criterion, options):
     correct = 0
 
     for inputs, labels, snr in train_loader:
-        # if options['cuda']: 
-        #     inputs, labels = inputs.cuda(), labels.cuda()
+        if options['cuda']: 
+            inputs, labels = inputs.cuda(), labels.cuda()
 
         optimizer.zero_grad()
         output = model(inputs)
 
-        # Assuming binary classification
         loss = criterion(output, labels)
         
-        # Use sigmoid for binary classification, apply threshold
-        pred = (torch.sigmoid(output.detach()) > 0.5).long()
+        pred = (torch.softmax(output.detach(), dim=1) > 0.75).long()
         correct += (pred == labels.unsqueeze(1)).sum().item()
-
-        # Calculate the number of correct predictions
-        # correct += pred.eq(labels.unsqueeze(1)).sum().item()
 
         # Accumulate loss for current batch
         total_loss += loss.item() * len(inputs)
@@ -66,83 +55,64 @@ def train_logicnets(model, train_loader, optimizer, criterion, options):
     return average_loss, accuracy
 
 
-
-def val_test_pytorch(model, val_loader, options):
+def test_logicnets(model, val_loader, options, dataset, test=True):
     model.eval()
     true_labels = []
     predictions = []
 
-    with torch.no_grad():
-        
-        for inputs, labels, snr in val_loader:  
-        
-            if options['cuda']: 
-                inputs, labels = inputs.cuda(), labels.cuda()
-    
-            outputs = model(inputs)
-            # Apply softmax for multi-class classification
-            softmax_outputs = torch.softmax(outputs, dim=1)
-
-            # Take the argmax to get the predicted class
-            pred = torch.argmax(softmax_outputs, dim=1).cpu().numpy()
-
-            true_labels.append(labels.numpy())  
-            predictions.append(pred)
-
-        # printing the accuracy of the model 
-        true_labels = np.concatenate(true_labels)
-        predictions = np.concatenate(predictions)
-
-    return accuracy_score(true_labels, predictions)
-
-
-def binary_val_test(model, val_loader, options):  
-    model.eval()
-    y_true = []
-    y_pred = []
+    # Arrays for the confusion matrix
+    y_exp = np.empty((0))
+    y_snr = np.empty((0))
+    y_pred = np.empty((0, len(dataset.mod_classes)))
 
     with torch.no_grad():
         for inputs, labels, snr in val_loader:
-            if options['cuda']:
+            if options['cuda']: 
                 inputs, labels = inputs.cuda(), labels.cuda()
-    
+
             outputs = model(inputs)
-            # Use sigmoid activation function for binary classification
-            pred = torch.round(torch.sigmoid(outputs)).reshape(-1).cpu().numpy()
+            softmax_outputs = torch.softmax(outputs, dim=1)
+            pred = torch.argmax(softmax_outputs, dim=1).cpu().numpy()
 
-            y_true.append(labels.cpu().numpy())
-            y_pred.append(pred)
+            true_labels.append(labels.cpu().numpy())  
+            predictions.append(pred)
 
-        y_true = np.concatenate(y_true)
-        y_pred = np.concatenate(y_pred)
+            y_pred = np.concatenate((y_pred, outputs.cpu().numpy()))
+            y_exp = np.concatenate((y_exp, labels.cpu().numpy()))  
+            y_snr = np.concatenate((y_snr, snr))
 
-    accuracy = accuracy_score(y_true, y_pred)
-    # print(f'Validation Accuracy: {accuracy:.4f}')
+    # Printing the accuracy of the model 
+    true_labels = np.concatenate(true_labels)
+    predictions = np.concatenate(predictions)
 
-    return accuracy
+    if test:
+        conf = np.zeros([len(dataset.mod_classes), len(dataset.mod_classes)])
+        confnorm = np.zeros([len(dataset.mod_classes), len(dataset.mod_classes)])
 
+        for i in range(len(y_exp)):
+            j = int(y_exp[i])
+            k = int(np.argmax(y_pred[i, :]))
+            conf[j, k] += 1
 
-def test_logicnets(model, dataset_loader, cuda, thresh=0.5):
-    model.eval()
-    correct = 0
-    accLoss = 0.0
+        for i in range(len(dataset.mod_classes)):
+            confnorm[i, :] = conf[i, :] / np.sum(conf[i, :]) if np.sum(conf[i, :]) > 0 else 0
 
-    with torch.no_grad(): 
-        for data, target, snr in dataset_loader:
+        # Plotting the confusion matrix
+        plot_confusion_matrix(confnorm, labels=dataset.mod_classes)
+        plt.show()
+        # Saving the confusion matrix, If needed then uncomment the following lines
+        # plt.savefig(f"{options['log_dir']}/confusion_matrix.pdf", dpi=800, format='pdf', bbox_inches='tight')
+        # plt.close()
 
-            if cuda:
-                data, target = data.cuda(), target.cuda()
+        # Saving confusion matrix data to CSV files, if needed then uncomment the following lines
+        # np.savetxt(f"{options['log_dir']}/confusion_matrix_raw.csv", conf, delimiter=",", fmt='%d')
+        # np.savetxt(f"{options['log_dir']}/confusion_matrix_normalized.csv", confnorm, delimiter=",", fmt='%.4f')
 
-            output = model(data)
-            pred = (output.detach() > thresh) 
+        cor = np.sum(np.diag(conf))
+        ncor = np.sum(conf) - cor
+        print(f"Overall Accuracy - all SNRs: {cor / (cor + ncor):.6f}")
 
-            curCorrect = pred.eq(target.unsqueeze(1)).long().sum()
-            curAcc = 100.0 * curCorrect / len(data)
-
-            correct += curCorrect
-    testing_accuracy = 100 * float(correct) / len(dataset_loader.dataset)
-    return testing_accuracy
-
+    return accuracy_score(true_labels, predictions)
 
 
 # plotting losses and/or accuracy of the model
@@ -154,28 +124,23 @@ def display_loss(losses, title = 'Training loss', xlabel= 'Iterations', ylabel= 
     plt.ylabel(ylabel)
 
 
-
 # Plotting function for loss and accuracy
-def plot_training_results(train_losses, val_accuracies, title_loss='Training Loss', title_acc='Validation Accuracy'):
+def plot_training_results(train_losses, val_accuracies, log_dir, plot_name = 'name.pdf', title_loss='Training Loss and Validation Accuracy'):
     epochs = range(1, len(train_losses) + 1)
 
-    # Plot training loss
-    plt.figure(figsize=(12, 5))
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs, train_losses, label='Training Loss', color='orange')
+    plt.plot(epochs, val_accuracies, label='Validation Accuracy', color='blue')
 
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, train_losses, label='Training Loss')
     plt.title(title_loss)
     plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-
-    # Plot training and validation accuracy
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, val_accuracies, label='Validation Accuracy')
-    plt.title(title_acc)
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy (%)')
+    plt.ylabel('Loss / Accuracy')
     plt.legend()
 
     plt.tight_layout()
-    plt.show()
+
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    plt.savefig(os.path.join(log_dir, plot_name), format='pdf', dpi=800)
+
+    plt.close()

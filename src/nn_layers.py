@@ -709,7 +709,7 @@ class SparseConv1dNeq(nn.Module):
 
 
 class pooling_layer(nn.Module):
-    def __init__(self, in_channels, out_channels, seq_length, input_quant, output_quant, mask, cnn_input=True, padding=1, pooling_kernel_size=2, apply_input_quant=True, apply_output_quant=True) -> None:
+    def __init__(self, in_channels, out_channels, seq_length, input_quant, output_quant, cnn_input=True, padding=1, pooling_kernel_size=2, apply_input_quant=True, apply_output_quant=True) -> None:
         super(pooling_layer, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
