@@ -71,7 +71,7 @@ configs = {
         "output_length": 5,
         "padding": 1,
         "1st_layer_in_f": 32,
-        "input_bitwidth": 2,
+        "input_bitwidth": 3,
         "hidden_bitwidth": 2,
         "output_bitwidth": 2,
         "input_fanin": 2,
