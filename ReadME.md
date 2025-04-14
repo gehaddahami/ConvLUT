@@ -1,2 +1,3 @@
-the file contains the source code files, three examples files and the requiremenets files. 
-the extended requirements file might contain unneccessary packages. check the smaller requirement.txt file first 
+Code cleaning and Docstring additions 
+
+Done: Verilog, Utils, Quant, half of nn_layers 
