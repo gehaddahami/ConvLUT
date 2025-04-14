@@ -12,11 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-'''
-This file contains the Verilog functions that are to be used to format the Verilog files. 
-1D-CNN Verilog functions are developed by the author/s of this project.
-'''
- 
+
+# This file contains Verilog utility functions for: 
+#   a) Verilog templates for registers, Top-level module, layer module, channel/neuron module 
+#   b) Functions that are used to format connections for: neurons, convolutional kernels, pooling kernels 
+# Some functions are adapted from LogicNets (https://arxiv.org/abs/2004.03021)
+# Newely developed functions are further illustrated in their docstrings 
+
 
 def generate_register_verilog(module_name="myreg", param_name="DataWidth", input_name="data_in", output_name="data_out"):
     register_template = """\
@@ -41,9 +43,6 @@ endmodule\n
                                         output_name=output_name)
 
 
-
-
-
 def generate_logicnets_verilog(module_name: str, input_name: str, input_bits: int, output_name: str, output_bits: int, module_contents: str):
     logicnets_template = """\
 module {module_name} (input [{input_bits_1:d}:0] {input_name}, input clk, input rst, output[{output_bits_1:d}:0] {output_name});
@@ -55,9 +54,6 @@ endmodule\n"""
                                 output_name=output_name,
                                 output_bits_1=output_bits-1,
                                 module_contents=module_contents)
-
-
-
 
 
 def layer_connection_verilog(layer_string: str, input_string: str, input_bits: int, output_string: str, output_bits: int, output_wire=True, register=False):
@@ -79,9 +75,6 @@ assign {input_string}w = {input_string};\n"""
                                                 output_bits_1=output_bits-1)
 
 
-
-
-
 def generate_lut_verilog(module_name, input_fanin_bits, output_bits, lut_string):
     lut_neuron_template = """\
 module {module_name} ( input [{input_fanin_bits_1:d}:0] M0, output [{output_bits_1:d}:0] M1 );
@@ -100,9 +93,6 @@ endmodule\n"""
                                         lut_string=lut_string)
 
 
-
-
-
 def generate_neuron_connection_verilog(input_indices, input_bitwidth):
     connection_string = ""
     for i in range(len(input_indices)):
@@ -115,16 +105,28 @@ def generate_neuron_connection_verilog(input_indices, input_bitwidth):
     return connection_string
 
 
+def generate_channel_connection_verilog(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, seq_length, padding):
+"""
+    This function creates comma-separated connection strings for kernel elements representing inputs and outputs as memory bit locations
 
+    Args:
+        active_channels (list): List of active channel indices from current the sparsity mask.
+        state_space_indices (list): indices of active channel elements (with resepct to total input channles).
+        seq_position (int): Current position of the kernel window within the sequence length.
+        ** remaining arguments are model-related: 
+        quantization bits, kernel_Size, total sequence size, padding paramater.  
 
+    Returns:
+        str: A comma-separated string of Verilog memory connections in the format M0[offset+bit].
+"""
 
-def generate_channel_connection_verilog(active_channels, state_space_indices, input_bitwidth, seq_position, kernel_size, total_channels, seq_length, padding):
     connection_string = ""
     for channel in active_channels:
         start_offset = channel * (seq_length + 2*padding) * input_bitwidth + seq_position * input_bitwidth
         for idx in range(kernel_size):
-            if idx >= len(state_space_indices):  # Stop if kernel_size exceeds state_space_indices length
-                break
+            if idx >= len(state_space_indices):
+                break # Stops if kernel_size exceeds state_space_indices length
+                
             index = state_space_indices[idx]
             offset = start_offset + idx * input_bitwidth
             
@@ -135,19 +137,28 @@ def generate_channel_connection_verilog(active_channels, state_space_indices, in
     return connection_string
 
 
-
-
-
 def generate_pooling_connection_verilog(input_channel, kernel_size, input_bitwidth, seq_length, seq_position):
+"""
+Generates Verilog connection strings for pooling kernels.
+
+    This function creates comma-separated connection strings for kernel elements representing inputs and outputs as memory bit locations
+
+    Args:
+        active_channels (list): List of active channel indices from current the sparsity mask.
+        state_space_indices (list): indices of active channel elements (with resepct to total input channles).
+        seq_position (int): Current position of the kernel window within the sequence length.
+        ** remaining arguments are model-related: 
+        quantization bits, kernel_Size, total sequence size, padding paramater.  
+
+    Returns:
+        str: A comma-separated string of Verilog memory connections in the format M0[offset+bit].
+"""
 
     connection_string = ""
-
     for idx in range(kernel_size):
         offset = (input_channel * seq_length * input_bitwidth + (seq_position + idx) * input_bitwidth)
         for b in reversed(range(input_bitwidth)):
             connection_string += f"M0[{offset + b}]"
             connection_string += ", "
-
     connection_string = connection_string.rstrip(", ")
-
     return connection_string

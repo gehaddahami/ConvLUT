@@ -12,10 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-'''
-The functions included in this files are developed by LogicNets.
-fetch_mask_indices_edited() function is edited for CNN processing purposes.
-'''
+
+# This file contains: 
+# 1) Functions to retrieve the mask indices for both MLP and 1D-CNN  
+# 2) Permutation matrix that returns all possible input combination used during truth table generation 
 
 
 # Imports 
@@ -27,7 +27,7 @@ from functools import reduce
 
 # TODO: vectorise this function                       
 def fetch_mask_indices(mask: torch.Tensor) -> torch.LongTensor:
-    """
+"""
     Fetches the indices of the non-zero elements in the given mask tensor.
 
     Parameters:
@@ -35,7 +35,7 @@ def fetch_mask_indices(mask: torch.Tensor) -> torch.LongTensor:
 
     Returns:
         torch.LongTensor: A tuple containing the indices of the non-zero elements in the mask tensor.
-    """
+"""
 
     local_mask = mask.detach().clone()
     fan_in = torch.sum(local_mask, dtype=torch.int64)
@@ -47,10 +47,8 @@ def fetch_mask_indices(mask: torch.Tensor) -> torch.LongTensor:
     return tuple(indices)
 
 
-
-# NOTE: This function might be replace the original function as it can fetch the indices after determining the dimensionality of the mask. Hence, It will work for both CNN and MLP layers
 def fetch_mask_indices_edited(mask: torch.Tensor) -> torch.LongTensor:
-    """
+"""
     Fetches the indices of the non-zero elements in the given mask tensor.
 
     Parameters:
@@ -58,7 +56,7 @@ def fetch_mask_indices_edited(mask: torch.Tensor) -> torch.LongTensor:
 
     Returns:
         torch.LongTensor: A tuple containing the indices of the non-zero elements in the mask tensor.
-    """
+"""
     
     if mask.dim() == 1:
         local_mask = mask.detach().clone()
@@ -82,14 +80,11 @@ def fetch_mask_indices_edited(mask: torch.Tensor) -> torch.LongTensor:
         return tuple(indices)
     
     else:
-        raise ValueError("The input mask tensor should be either 1D or 2D.")
-    
+        raise ValueError("The input mask tensor should be either 1D or 2D.")    
     
 
 # Return a matrix which contains all input permutations
-# TODO: implement this function
 def generate_permutation_matrix(input_state_space) -> torch.Tensor:
-   
     total_permutations = reduce(lambda a,b: a*b, map(lambda x: x.nelement(), input_state_space)) # Calculate the total number of permutations
     fan_in = len(input_state_space)
     permutations_matrix = torch.zeros((total_permutations,fan_in))
@@ -101,9 +96,7 @@ def generate_permutation_matrix(input_state_space) -> torch.Tensor:
             index = next_perm % div_factor
             permutations_matrix[p,f] = input_state_space[f][index]
             next_perm = next_perm // div_factor
-
     return permutations_matrix
-
 
 
 # Prepare a directory for simulating post-synthesis verilog from Vivado.
@@ -141,22 +134,3 @@ def proc_postsynth_file(code_dir):   # might need some modifications later
     call_omx = call_omx.split()
     proc = subprocess.Popen(call_omx, stdout=subprocess.PIPE, env=os.environ)
     proc.communicate()
-
-
-
-def get_lut_cost(model):
-
-    from . import SparseLinearNeq, SparseConv1dNeq  
-    # Consider moving this outside the function and into the import section. 
-    # Prevent circular import
-    total_lut_cost = 0
-    for _, module in model.named_modules():
-        if type(module) == SparseLinearNeq:
-            lut_cost = module.lut_cost()
-            total_lut_cost = total_lut_cost + lut_cost
-
-        elif type(module) == SparseConv1dNeq: 
-            lut_cost_conv = module.lut_cost() 
-            total_lut_cost = total_lut_cost + lut_cost_conv 
-
-    return total_lut_cost

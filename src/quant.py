@@ -12,12 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-'''
-Edits in this class include updating some calls to align with the new release of the Brevitas Library.
-Also, deactivate_transforms() and activate_transforms() add functions added for the pooling layes to ensure no transforms are applied
-during truth table generation for pooling layers. 
-'''
 
+# This file contains: 
+# 1) Functions to generate the state space for floating or integer bit representation 
+# 2) The main quantization class (developed by LogicNets (https://arxiv.org/abs/2004.03021)) 
+#    with additional functionality inreoduced for 1D-CNNs, namely: 
+#        a) activate_transforms():  to activate additional functions included in the quantization class 
+#        b) deactivate_transforms(): to deactivate additional functions included in the quantization class 
+#    These functions are used during pooling kernels truth tables generation 
+# 3) Biasing and scaling functions that can be used as post or transformation functions within the quantization class  
 
 
 # Imports 
@@ -48,7 +51,7 @@ def get_float_state_space(bits: int, scale_factor: float, signed: bool, narrow_r
     return state_space
 
 
-# DONE: some of the functions and calls included in the class below have been edited to match with the new release of the Brevitas Library.
+# Some of the functions and calls included in the class below have been edited to match with the new release of the Brevitas Library.
 class QuantBrevitasActivation(nn.Module):
     def __init__(self, brevitas_module, pre_transforms: list = [], post_transforms: list = []):
         super(QuantBrevitasActivation, self).__init__()
@@ -89,7 +92,6 @@ class QuantBrevitasActivation(nn.Module):
         self.pre_transforms = self.pre_transforms
         self.post_transforms = self.post_transforms
     
-
     def get_quant_type(self): 
         brevitas_module_type = type(self.brevitas_module.act_quant.fused_activation_quant_proxy.tensor_quant)
         if brevitas_module_type == RescalingIntQuant:
@@ -158,12 +160,11 @@ class QuantBrevitasActivation(nn.Module):
             x = self.apply_pre_transforms(x)
             x = self.brevitas_module(x)
             x= self.apply_post_transforms(x)
-        return x
-    
+        return x   
 
 
 # The scaling and bias classes. one applies scaling before the bias and the other does the opposite
-class ScalarScaleBias(nn.Module):
+class ScalarScaleBias(nn.Module):   # Scalar then bias scaling 
     def __init__(self, scale=True, scale_init=1.0, bias=True, bias_init=0.0) -> None:
         super(ScalarScaleBias, self).__init__()
         if scale:
@@ -193,12 +194,10 @@ class ScalarScaleBias(nn.Module):
         return x
 
 
-
-class ScalarBiasScale(ScalarScaleBias):
+class ScalarBiasScale(ScalarScaleBias): # Bias then scalar scaling
     def forward(self, x):
         if self.bias is not None:
             x = x + self.bias
         if self.weight is not None:
             x = x*self.weight
         return x
-    

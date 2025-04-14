@@ -12,10 +12,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-'''
-SparseConv1dNeq() and pooling_layer() are classes that are developed by the author/s to process CNN layers. 
-other functions are modified to include the added layers into their call. 
-'''
+
+# This file contains: 
+# 1) customized nn layers for: 
+#     a) Linear layers (SparseLinearNeq())
+#     b) Convolutional layers (SparseConv1dNeq()) 
+#     c) Pooling layers (pooling_layer()) 
+# 2) Customized forward functions that includes the sparsity mask during initialization 
+# 3) Sparsity mask classes for MLPs and 1D-CNNS
+# 4) Main call for truth table generation
+# 5) Main call for Verilog generation 
+# 6) Flag functions for changing into the resepective implementation phase
+
 
 # Imports
 from functools import partial, reduce
@@ -43,9 +51,8 @@ from bench import      generate_lut_bench, \
                         sort_to_bench
 
 
-# functions for the truth table generations and the Verilog generation: 
+# Function for truth table generation: 
 def generate_truth_tables(model: nn.Module, verbose: bool = False): 
-    
     training = model.training 
     model.eval() 
     for name, module in model.named_modules():
@@ -73,6 +80,7 @@ def generate_truth_tables(model: nn.Module, verbose: bool = False):
     model.training = training
 
 
+# Activating the necessary functions for each repsective implementation phase (PyTorch or LUT-based)
 def lut_inference(model: nn.Module) -> None: 
     for name, module in model.named_modules(): 
         if type(module) == SparseLinearNeq: 
@@ -97,6 +105,7 @@ def neq_inference(model: nn.Module) -> None:
             module.neq_inference()
 
 
+# Functions for Verilog generation: 
 def module_list_to_verilog_module(module_list: nn.ModuleList, module_name: str, output_directory: str, add_registers: bool = True, generate_bench: bool =True): 
     input_bitwidth = None 
     output_bitwidth = None
@@ -512,7 +521,7 @@ class SparseConv1dNeq(nn.Module):
                 output_offset +=  output_bitwidth * self.padding
 
             for seq_position in range(self.seq_length):
-                connection_string = generate_channel_connection_verilog(channel_indices, state_space_indices, input_bitwidth, seq_position, self.kernel_size, self.in_channels, self.seq_length, self.padding)
+                connection_string = generate_channel_connection_verilog(channel_indices, state_space_indices, input_bitwidth, seq_position, self.kernel_size, self.seq_length, self.padding)
                 wire_name = f"{module_name}_seq_{seq_position}_wire" 
                 connection_line = f"wire [{len(state_space_indices)* input_bitwidth-1}:0] {wire_name} = {{{connection_string}}}; \n" 
                 inst_line = f"{module_name} {module_name}_seq_{seq_position}_inst (.M0({wire_name}), .M1(M1[{output_offset+output_bitwidth-1}:{output_offset}])); \n\n"
