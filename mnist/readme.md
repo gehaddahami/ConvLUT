@@ -34,7 +34,7 @@ Then, generate verilog:
 python neq2lut.py --arch <mlp8|mlp16|mlp28> --checkpoint ./<best_acc>/best_acc.pth --log-dir ./<mlp8|mlp16|mlp28>/verilog/ 
 ```
 
-# To train the MLP configurations 
+# To train the CNN configurations 
 Train:
 
 ```bash
