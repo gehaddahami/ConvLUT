@@ -43,7 +43,7 @@ def dump_io(model, data_loader, input_file, output_file, training_config):
     input_quant = model.module_list[0].input_quant
     _, input_bitwidth = input_quant.get_scale_factor_bits()
     input_bitwidth = int(input_bitwidth)
-    if training_config['topology'] == 'cnn':
+    if other_options['topology'] == 'cnn':
         total_input_bits = model.module_list[0].in_channels*input_bitwidth* (model.module_list[0].seq_length + 2) # remove 2 if padding is not considered
         input_quant.bin_output()
         # padding consideration 
