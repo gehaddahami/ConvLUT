@@ -53,5 +53,60 @@ Results may vary slightly.
 | CNN8        | 87.0          | 51492    |2477      | 345.0         |17.4          |
 | CNN16       | 89.0          | 123920   |6606      | 355.3         |17.1          |
 
+<table border="1">
+  <thead>
+    <tr>
+      <th>Model</th>
+      <th>Test Accuracy</th>
+      <th>LUTs</th>
+      <th>FFs</th>
+      <th>f-max (MHz)</th>
+      <th>Latency (ns)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>MLP8</td>
+      <td>90.3</td>
+      <td>35109</td>
+      <td>1812</td>
+      <td>420.0</td>
+      <td>14.2</td>
+    </tr>
+    <tr>
+      <td>MLP16</td>
+      <td>93.7</td>
+      <td>34381</td>
+      <td>1852</td>
+      <td>414.0</td>
+      <td>15.0</td>
+    </tr>
+    <tr>
+      <td>MLP28</td>
+      <td>93.0</td>
+      <td>35569</td>
+      <td>2668</td>
+      <td>354.0</td>
+      <td>16.9</td>
+    </tr>
+    <tr>
+      <td>CNN8</td>
+      <td>87.0</td>
+      <td>51492</td>
+      <td>2477</td>
+      <td>345.0</td>
+      <td>17.4</td>
+    </tr>
+    <tr>
+      <td>CNN16</td>
+      <td>89.0</td>
+      <td>123920</td>
+      <td>6606</td>
+      <td>355.3</td>
+      <td>17.1</td>
+    </tr>
+  </tbody>
+</table>
+
 
 
