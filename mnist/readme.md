@@ -42,7 +42,7 @@ to both training and verilog generation steps
 
 ## Results
 
-Results may vary slightly. 
+Results may vary slightly. The results here are obtained using CPU training and Vivado 2022.2
 
 | Model       |Test Accuracy  |LUTs      |FFs       | f-max (MHz)   |Latency (ns)  |
 | :-----------|:------------- |:---------|:---------|:------------- |:------------ |
