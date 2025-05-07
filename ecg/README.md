@@ -2,30 +2,30 @@
 
 ## Download the dataset 
 
-    ```bash
-    # Make a data directory
-    mkdir -p data
+```bash
+# Make a data directory
+mkdir -p data
 
-    # Navigate into it
-    cd data
+# Navigate into it
+cd data
 
-    # Download ECG dataset directly into ./data
-    wget -r -nH --cut-dirs=3 -N -c -np https://physionet.org/files/mitdb/1.0.0/
-    ```
+# Download ECG dataset directly into ./data
+wget -r -nH --cut-dirs=3 -N -c -np https://physionet.org/files/mitdb/1.0.0/
+```
 ## Training and Verilog generation 
 
 Two model variations are provided (cnn-a) and (cnn-l), Their model topology (number of layers and channels/neurons) are different. To train the networks, run: 
 
-    ```bash 
-    python3 train.py --arch <cnn-a|cnn-l> --log-dir ./<cnn-a | cnn-l>/ 
-    ```
+```bash 
+python3 train.py --arch <cnn-a|cnn-l> --log-dir ./<cnn-a | cnn-l>/ 
+```
 
 
 After training is complete, Generate truth tables and Verilog script for the trained model using: 
 
-    ```bash 
-    python3 neq2lut.py --log-dir ./<cnn-a|cnn-l>/ --checkpoint ./<cnn-a|cnn-l>/best_acc.pth --arch <cnn-a|cnn-l> --dump-io --add-registers
-    ```
+```bash 
+python3 neq2lut.py --log-dir ./<cnn-a|cnn-l>/ --checkpoint ./<cnn-a|cnn-l>/best_acc.pth --arch <cnn-a|cnn-l> --dump-io --add-registers
+```
 
 
 ## Results
