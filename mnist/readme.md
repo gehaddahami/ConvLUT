@@ -36,7 +36,7 @@ python neq2lut.py --arch <cnn8|cnn16> --checkpoint ./<cnn8|cnn16>/best_acc.pth -
 ```
 
 ➕ To enable Fashion MNIST, add:
---mnist_fashion True 
+(--mnist_fashion True) 
 to both training and verilog generation steps
 
 
