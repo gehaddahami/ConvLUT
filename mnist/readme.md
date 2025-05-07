@@ -53,60 +53,59 @@ Results may vary slightly.
 | CNN8        | 87.0          | 51492    |2477      | 345.0         |17.4          |
 | CNN16       | 89.0          | 123920   |6606      | 355.3         |17.1          |
 
-<table border="1">
+
+<table style="border: 1px solid black; border-collapse: collapse;">
   <thead>
     <tr>
-      <th>Model</th>
-      <th>Test Accuracy</th>
-      <th>LUTs</th>
-      <th>FFs</th>
-      <th>f-max (MHz)</th>
-      <th>Latency (ns)</th>
+      <th style="border: 1px solid black; padding: 5px;">Model</th>
+      <th style="border: 1px solid black; padding: 5px;">Test Accuracy</th>
+      <th style="border: 1px solid black; padding: 5px;">LUTs</th>
+      <th style="border: 1px solid black; padding: 5px;">FFs</th>
+      <th style="border: 1px solid black; padding: 5px;">f-max (MHz)</th>
+      <th style="border: 1px solid black; padding: 5px;">Latency (ns)</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td>MLP8</td>
-      <td>90.3</td>
-      <td>35109</td>
-      <td>1812</td>
-      <td>420.0</td>
-      <td>14.2</td>
+      <td style="border: 1px solid black; padding: 5px;">MLP8</td>
+      <td style="border: 1px solid black; padding: 5px;">90.3</td>
+      <td style="border: 1px solid black; padding: 5px;">35109</td>
+      <td style="border: 1px solid black; padding: 5px;">1812</td>
+      <td style="border: 1px solid black; padding: 5px;">420.0</td>
+      <td style="border: 1px solid black; padding: 5px;">14.2</td>
     </tr>
     <tr>
-      <td>MLP16</td>
-      <td>93.7</td>
-      <td>34381</td>
-      <td>1852</td>
-      <td>414.0</td>
-      <td>15.0</td>
+      <td style="border: 1px solid black; padding: 5px;">MLP16</td>
+      <td style="border: 1px solid black; padding: 5px;">93.7</td>
+      <td style="border: 1px solid black; padding: 5px;">34381</td>
+      <td style="border: 1px solid black; padding: 5px;">1852</td>
+      <td style="border: 1px solid black; padding: 5px;">414.0</td>
+      <td style="border: 1px solid black; padding: 5px;">15.0</td>
     </tr>
     <tr>
-      <td>MLP28</td>
-      <td>93.0</td>
-      <td>35569</td>
-      <td>2668</td>
-      <td>354.0</td>
-      <td>16.9</td>
+      <td style="border: 1px solid black; padding: 5px;">MLP28</td>
+      <td style="border: 1px solid black; padding: 5px;">93.0</td>
+      <td style="border: 1px solid black; padding: 5px;">35569</td>
+      <td style="border: 1px solid black; padding: 5px;">2668</td>
+      <td style="border: 1px solid black; padding: 5px;">354.0</td>
+      <td style="border: 1px solid black; padding: 5px;">16.9</td>
     </tr>
     <tr>
-      <td>CNN8</td>
-      <td>87.0</td>
-      <td>51492</td>
-      <td>2477</td>
-      <td>345.0</td>
-      <td>17.4</td>
+      <td style="border: 1px solid black; padding: 5px;">CNN8</td>
+      <td style="border: 1px solid black; padding: 5px;">87.0</td>
+      <td style="border: 1px solid black; padding: 5px;">51492</td>
+      <td style="border: 1px solid black; padding: 5px;">2477</td>
+      <td style="border: 1px solid black; padding: 5px;">345.0</td>
+      <td style="border: 1px solid black; padding: 5px;">17.4</td>
     </tr>
     <tr>
-      <td>CNN16</td>
-      <td>89.0</td>
-      <td>123920</td>
-      <td>6606</td>
-      <td>355.3</td>
-      <td>17.1</td>
+      <td style="border: 1px solid black; padding: 5px;">CNN16</td>
+      <td style="border: 1px solid black; padding: 5px;">89.0</td>
+      <td style="border: 1px solid black; padding: 5px;">123920</td>
+      <td style="border: 1px solid black; padding: 5px;">6606</td>
+      <td style="border: 1px solid black; padding: 5px;">355.3</td>
+      <td style="border: 1px solid black; padding: 5px;">17.1</td>
     </tr>
   </tbody>
 </table>
-
-
 
