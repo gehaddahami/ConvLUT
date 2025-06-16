@@ -1,4 +1,4 @@
-# CNN LUT-based Acceleration 
+# CNN LUT-based Acceleration (ConvLUT)
 
 This repository presents a novel method in accelerating 1D-Convolutional networks following [LogicNets](https://github.com/Xilinx/logicnets) approach.
 
