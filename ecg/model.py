@@ -1,3 +1,6 @@
+# This file is Part of Conv-LUT
+# Conv-LUT is based on LogicNets  
+
 '''
 This is the model architecture for ECG classification task. 
 The number of layers can be manually adjusted by the used to add or remove layers. 

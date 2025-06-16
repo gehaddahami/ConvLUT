@@ -1,3 +1,6 @@
+# This file is Part of Conv-LUT
+# Conv-LUT is based on LogicNets  
+
 '''
 This file contains the data loader for the RadioML dataset. 
 The class is created in a way that specific modulations can be imported and their relative sequence length can also be chosen. 

@@ -1,4 +1,7 @@
-#  Copyright (C) 2021 Xilinx, Inc
+# This file is Part of Conv-LUT
+# Conv-LUT is based on LogicNets   
+
+# Copyright (C) 2021 Xilinx, Inc
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -11,7 +14,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
 '''
 This file contains the Verilog functions that are to be used to format the Verilog files. 
 1D-CNN Verilog functions are developed by the author/s of this project.

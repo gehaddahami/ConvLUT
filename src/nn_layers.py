@@ -1,4 +1,7 @@
-#  Copyright (C) 2021 Xilinx, Inc
+# This file is Part of Conv-LUT
+# Conv-LUT is based on LogicNets   
+
+# Copyright (C) 2021 Xilinx, Inc
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -451,31 +454,6 @@ class SparseConv1dNeq(nn.Module):
         self.apply_output_quant = apply_output_quant 
         self.cnn_output = cnn_output
     
-
-    def lut_cost(self):  # Is this valid for 1D-CNN? 
-        """
-        Approximate how many 6:1 LUTs are needed to implement this layer using 
-        LUTCost() as defined in LogicNets paper FPL'20:
-            LUTCost(X, Y) = (Y / 3) * (2^(X - 4) - (-1)^X)
-        where:
-        * X: input fanin bits
-        * Y: output bits 
-        LUTCost() estimates how many LUTs are needed to implement 1 neuron, so 
-        we then multiply LUTCost() by the number of neurons to get the total 
-        number of LUTs needed.
-        NOTE: This function (over)estimates how many 6:1 LUTs are needed to implement
-        this layer b/c it assumes every neuron is connected to the next layer 
-        since we do not have the next layer's sparsity information.
-        """
-        # Compute LUTCost of 1 neuron
-        _, input_bitwidth = self.input_quant.get_scale_factor_bits()
-        _, output_bitwidth = self.output_quant.get_scale_factor_bits()
-        input_bitwidth, output_bitwidth = int(input_bitwidth), int(output_bitwidth)
-        x = input_bitwidth * self.conv.mask.fan_in # neuron input fanin
-        y = output_bitwidth 
-        neuron_lut_cost = (y / 3) * ((2 ** (x - 4)) - ((-1) ** x))
-        # Compute total LUTCost
-        return self.out_channels * neuron_lut_cost
     
     
     def gen_layer_verilog(self, module_prefix, directory, generate_bench: bool = True): 
@@ -553,30 +531,6 @@ class SparseConv1dNeq(nn.Module):
             lut_string += f"\t\t\t{int(cat_input_bitwidth)}'b{entry_string}:M1r = {int(output_bitwidth)}'b{res_str};\n"
 
         return generate_lut_verilog(module_name, int(cat_input_bitwidth), int(output_bitwidth), lut_string)
-    
-
-    def gen_neuron_bench(self, index, module_name):
-        for i in range(self.seq_length): 
-            indices, state_space_indices, input_perm_matrix, float_output_states, bin_output_states = self.out_channel_truth_table[index] 
-            _, input_bitwidth = self.input_quant.get_scale_factor_bits()
-            _, output_bitwidth = self.output_quant.get_scale_factor_bits()
-            cat_input_bitwidth = len(indices) * self.kernel_size * input_bitwidth
-            lut_string = '' 
-            num_entries = input_perm_matrix.shape[0]
-
-            # sorting the input perm matrix to match the bench format 
-            input_state_space_bin_str = list(map(lambda y: list(map(lambda z:self.input_quant.get_bin_str(z), y)), input_perm_matrix))
-            sorted_bin_output_states = sort_to_bench(input_state_space_bin_str, bin_output_states) 
-
-            # Generate the LUT for each output: 
-            for i in range(int(output_bitwidth)): 
-                lut_string += f"M1[{i}]             =LUT 0x"
-                output_bin_str = reduce(lambda b,c: b+c, map(lambda a:self.output_quant.get_bin_str(a)[int(output_bitwidth)-1-i], sorted_bin_output_states))
-                lut_hex_string = f"int{int(output_bin_str, 2):0{int(num_entries/4)}x} "
-                lut_string += lut_hex_string 
-                lut_string += generate_lut_input_string(int(cat_input_bitwidth))
-            
-            return generate_lut_bench(int(cat_input_bitwidth), int(output_bitwidth), lut_string)
     
 
     def lut_inference(self): 
